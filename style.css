@@ -1,0 +1,138 @@
+/* --- TEMEL AYARLAR --- */
+* { 
+    box-sizing: border-box; 
+    margin: 0; 
+    padding: 0; 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+}
+
+body { 
+    background-color: #050b14; /* Koyu askeri radar teması */
+    color: #e2e8f0; 
+    height: 100vh; 
+    overflow: hidden; 
+}
+
+#game-container { 
+    display: flex; 
+    width: 100vw; 
+    height: 100vh; 
+    padding: 10px; 
+    gap: 15px; 
+}
+
+/* --- YAN PANELLER --- */
+.panel { 
+    background: rgba(15, 23, 42, 0.95); 
+    border: 1px solid #1e293b; 
+    border-radius: 8px; 
+    padding: 20px; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 12px; 
+    width: 25%; 
+    min-width: 320px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+    overflow-y: auto;
+}
+
+h2 { color: #38bdf8; font-size: 1.2rem; border-bottom: 2px solid #1e293b; padding-bottom: 5px; }
+h3 { color: #94a3b8; font-size: 0.9rem; letter-spacing: 1px; margin-top: 10px; text-transform: uppercase;}
+
+.stat-box { 
+    background: #0f172a; 
+    padding: 10px; 
+    border-radius: 4px; 
+    font-size: 0.95rem; 
+    border-left: 3px solid #38bdf8;
+}
+.tension-box { border-left-color: #ef4444; color: #fca5a5; font-weight: bold;}
+
+/* --- BUTONLAR --- */
+button { 
+    background: #2563eb; 
+    color: white; 
+    border: none; 
+    padding: 12px; 
+    border-radius: 4px; 
+    cursor: pointer; 
+    font-weight: bold; 
+    transition: 0.2s; 
+}
+button:hover { background: #1d4ed8; transform: translateY(-1px); }
+
+.btn-tech { background: #0d9488; }
+.btn-tech:hover { background: #0f766e; }
+
+.btn-dip { background: #ca8a04; }
+.btn-dip:hover { background: #a16207; }
+
+.btn-war { background: #991b1b; }
+.btn-war:hover { background: #7f1d1d; }
+
+.btn-attack { background: #dc2626; font-size: 1.1rem; text-shadow: 1px 1px 2px black; box-shadow: 0 0 10px rgba(220,38,38,0.5);}
+.btn-attack:hover { background: #b91c1c; box-shadow: 0 0 15px rgba(220,38,38,0.8);}
+
+.btn-turn { background: #16a34a; font-size: 1.1rem; margin-top: auto; padding: 15px; }
+.btn-turn:hover { background: #15803d; }
+
+/* --- INPUT VE SELECT (Açılır Menüler) --- */
+select, input { 
+    background: #020617; 
+    color: white; 
+    border: 1px solid #334155; 
+    padding: 10px; 
+    border-radius: 4px; 
+    font-size: 1rem;
+    outline: none;
+}
+select:focus, input:focus { border-color: #38bdf8; }
+
+.hss-info { 
+    font-size: 0.85rem; 
+    color: #86efac; 
+    background: #14532d; 
+    padding: 8px; 
+    border-radius: 4px; 
+    text-align: center;
+}
+
+/* --- ASKERİ LOG KUTUSU --- */
+#log-box { 
+    flex: 1; 
+    background: #000; 
+    border: 1px solid #334155; 
+    border-radius: 4px; 
+    padding: 12px; 
+    overflow-y: auto; 
+    font-family: 'Consolas', 'Courier New', monospace; 
+    font-size: 0.85rem; 
+    min-height: 150px;
+}
+
+/* ========================================= */
+/* --- HARİTA VE ANİMASYON SİHRİ BURADA --- */
+/* ========================================= */
+#map-wrapper { 
+    flex: 1; 
+    position: relative; /* Container göreceli olmalı */
+    background: #011024; /* Okyanus rengi */
+    border: 2px solid #1e293b; 
+    border-radius: 8px; 
+    overflow: hidden; 
+    box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
+}
+
+#game-map, #animCanvas {
+    position: absolute; /* İkisi tam olarak aynı koordinatları kaplar */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Tıklamaların SVG haritasına geçmesi için kanvas tıklanmaz yapılır */
+#animCanvas {
+    pointer-events: none; 
+    z-index: 10; /* Animasyonlar haritanın üstünde çıksın diye */
+}
