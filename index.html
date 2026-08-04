@@ -1,81 +1,226 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tayfun V3 - Grand Strategy</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>TAYFUN — Kara Kartal Doktrini</title>
+<link rel="stylesheet" href="style.css">
+<!-- YENİ: Gerçek dünya haritası için D3 + TopoJSON (CDN). İnternet yoksa
+     geo.js otomatik olarak elle çizilmiş yedek haritaya düşer, oyun
+     yine de açılır. -->
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 </head>
 <body>
 
-    <div id="game-container">
-        
-        <!-- SOL PANEL: Sizin Ülkeniz ve Ekonominiz -->
-        <div class="panel" id="left-panel">
-            <h2>TÜRKİYE (OYUNCU)</h2>
-            <div class="stat-box">💰 Hazine: <span id="val-budget"></span></div>
-            <div class="stat-box">👥 İnsan Gücü: <span id="val-manpower"></span></div>
-            <div class="stat-box">⚖️ İstikrar: <span id="val-stability"></span></div>
-            <div class="stat-box">☢️ Uranyum: <span id="val-uranium"></span></div>
-            <div class="stat-box">⏳ Tur: <span id="val-turn"></span></div>
-            <div class="stat-box tension-box">🌍 Global Tansiyon: <span id="val-tension"></span></div>
-
-            <h3>AR-GE MERKEZİ</h3>
-            <button class="btn-tech" onclick="engine.research('nuclear')">☢️ Nükleer Silahlanma (100.000$)</button>
-            <button class="btn-tech" onclick="engine.research('cyber')">💻 Siber İstihbarat Ağı (40.000$)</button>
-            
-            <h3>MÜHİMMAT ENVANTERİ</h3>
-            <div id="inventory-list">
-                <!-- Javascript burayı otomatik dolduracak -->
-            </div>
-
-            <button onclick="engine.nextTurn()" class="btn-turn">⏳ TUR ATLA (Maaş & Üretim)</button>
-        </div>
-
-        <!-- ORTA PANEL: HARİTA VE ANİMASYONLAR -->
-        <div id="map-wrapper">
-            <!-- Ülkelerin ve Şehirlerin çizildiği alt katman -->
-            <svg id="game-map"></svg>
-            <!-- Füzelerin, dronların ve patlamaların yaşandığı üst katman -->
-            <canvas id="animCanvas"></canvas>
-        </div>
-
-        <!-- SAĞ PANEL: Diplomasi ve Savaş -->
-        <div class="panel" id="right-panel">
-            <h2>HEDEF: <span id="target-country-name">Seçilmedi</span></h2>
-            <div class="stat-box">🤝 İlişki Seviyesi: %<span id="target-relation"></span></div>
-            <div class="stat-box">⚖️ Hedef İstikrar: <span id="target-stability"></span></div>
-            
-            <h3>DİPLOMASİ</h3>
-            <button class="btn-dip" onclick="engine.diplomacy('justify')">🕵️ Casus Belli Yarat (25.000$)</button>
-            <button class="btn-war" onclick="engine.diplomacy('war')">⚔️ SAVAŞ İLAN ET</button>
-
-            <h3>HAREKAT & TAARRUZ</h3>
-            <label>Vurulacak Şehir:</label>
-            <select id="target-city-select" onchange="ui.onCityChange()">
-                <!-- JS dolduracak -->
-            </select>
-            <div id="target-city-info" class="hss-info">HSS Durumu: Bilinmiyor (Siber Ağ Gerekli)</div>
-            
-            <label>Kullanılacak Mühimmat:</label>
-            <select id="attack-weapon">
-                <option value="drone_swarm">Sürü Drone (HSS Tüketmek için ideal - Hasar: 2)</option>
-                <option value="ballistic">Balistik Füze (Ana Taarruz - Hasar: 20)</option>
-                <option value="nuke">Nükleer Başlık (Şehri Yok Eder - Hasar: 100)</option>
-            </select>
-            
-            <label>Ateşlenecek Miktar:</label>
-            <input type="number" id="attack-amount" value="5" min="1" max="1000">
-            
-            <button class="btn-attack" onclick="engine.launchAttack()">🚀 ATEŞLE</button>
-
-            <h3>ASKERİ LOGLAR</h3>
-            <div id="log-box"></div>
-        </div>
-
+<div id="country-select-screen">
+  <h1>🌍 TAYFUN — Oynayacağınız Ülkeyi Seçin</h1>
+  <div id="country-cards"></div>
+  <div id="load-code-box">
+    <button onclick="document.getElementById('load-code-area').style.display='flex'; this.style.display='none';" style="background:#0d6e63;">📥 Kayıtlı Kodum Var, Devam Et</button>
+    <div id="load-code-area" style="display:none;flex-direction:column;gap:6px;width:100%;max-width:400px;">
+      <textarea id="start-sync-code" rows="3" placeholder="Kayıt kodunu buraya yapıştır"></textarea>
+      <button onclick="engine.loadCodeFromStart()" style="background:#0d6e63;">Kodu Yükle ve Devam Et</button>
     </div>
+  </div>
+</div>
 
-    <!-- Oyun Motorunu Bağlıyoruz -->
-    <script src="game.js"></script>
+<div id="game-container" style="display:none;">
+
+  <div id="map-wrapper">
+    <svg id="game-map" width="1000" height="500" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet"></svg>
+    <canvas id="animCanvas"></canvas>
+    <!-- YENİ: kıta bloğu / ülke bilgi ipucu kutusu (haritaya tıklayınca) -->
+    <div id="map-tooltip" class="map-tooltip" style="display:none;"></div>
+  </div>
+
+  <!-- Mobilde görünür sekme çubuğu — YENİ: 3. sekme BM Konseyi -->
+  <div id="mobile-tabs">
+    <button id="tab-left" class="active" onclick="ui.switchTab('left')">🏛️ Karargâh</button>
+    <button id="tab-right" onclick="ui.switchTab('right')">⚔️ Diplomasi</button>
+    <button id="tab-un" onclick="ui.switchTab('un')">🇺🇳 BM</button>
+  </div>
+
+  <div class="panel mobile-active" id="left-panel">
+    <h2 id="hq-title">Karargâh</h2>
+    <div id="save-load-box" style="display:flex;gap:5px;">
+      <button onclick="saveSystem.save()" style="flex:1;background:#1d4e6e;">💾 Kaydet</button>
+      <button onclick="saveSystem.load()" style="flex:1;background:#0d6e63;">📂 Yükle</button>
+      <button onclick="saveSystem.reset()" style="background:#7a1f1f;">🗑️</button>
+    </div>
+    <div class="small-note">💾/📂 sadece bu tarayıcıda çalışır. Farklı cihaza taşımak için:</div>
+    <div id="sync-box">
+      <button onclick="engine.generateCode()" style="background:#5a3a12;">🔗 Kayıt Kodu Oluştur</button>
+      <textarea id="sync-code" rows="2" placeholder="Kod burada görünecek / başka cihazdan buraya yapıştır"></textarea>
+      <button onclick="engine.loadCode()" style="background:#0d6e63;">📥 Koddan Yükle</button>
+    </div>
+    <div class="stat-box">💰 Hazine <b id="val-budget"></b></div>
+    <div class="stat-box">👥 İnsan Gücü <b id="val-manpower"></b></div>
+    <div class="stat-box">⚖️ İstikrar <b id="val-stability"></b></div>
+    <div class="stat-box support-box">🫡 Halk Desteği <b id="val-support"></b></div>
+    <div class="stat-box">☢️ Uranyum <b id="val-uranium"></b></div>
+    <div class="stat-box">⏳ Tur <b id="val-turn"></b></div>
+    <div class="stat-box tension-box">🌍 Global Tansiyon <b id="val-tension"></b></div>
+    <div class="stat-box" id="refugee-box" style="display:none;">🏕️ Mülteci Akını <b id="val-refugee"></b></div>
+
+    <!-- YENİ: Vergi Politikası — yüksek vergi = çok gelir, az halk desteği -->
+    <h3>Vergi Politikası</h3>
+    <label>Vergi Oranı: <b id="tax-rate-label">%30</b></label>
+    <input type="range" id="tax-rate-slider" min="0" max="100" value="30" step="5" oninput="engine.setTaxRate(this.value)">
+    <div class="small-note">Düşük vergi → az gelir, yüksek halk desteği. Yüksek vergi → çok gelir, düşük halk desteği.</div>
+
+    <h3>Ar-Ge Merkezi</h3>
+    <button class="btn-tech" id="btn-nuclear" onclick="engine.research('nuclear')">☢️ Nükleer Silahlanma (120.000$)</button>
+    <button class="btn-tech" id="btn-cyber" onclick="engine.research('cyber')">💻 Siber İstihbarat Ağı (45.000$)</button>
+    <button class="btn-tech" id="btn-radar" onclick="engine.research('radar')">📡 Gelişmiş Radar (60.000$)</button>
+    <button class="btn-tech" id="btn-hss" onclick="engine.research('hss_adv')">🛡️ HSS Modernizasyonu (70.000$)</button>
+    <button class="btn-tech" id="btn-jet" onclick="engine.research('gen5_jet')">✈️ Hava Üstünlüğü Doktrini (90.000$)</button>
+    <!-- YENİ: kademeli teknoloji ağacı — ICBM'den önce bu şart -->
+    <button class="btn-tech" id="btn-mrbm" onclick="engine.research('mrbm')">🛰️ Orta Menzil Roket Programı (80.000$)</button>
+    <button class="btn-tech" id="btn-icbm" onclick="engine.research('icbm')">🚀 Kıtalararası Füze Programı (150.000$) <span class="small-note">Önkoşul: Orta Menzil Roket</span></button>
+    <!-- YENİ: uçak yakıt ikmali teknolojisi -->
+    <button class="btn-tech" id="btn-refuel" onclick="engine.research('air_refuel')">⛽ Havada Yakıt İkmali Programı (100.000$)</button>
+    <div class="small-note" id="tech-status"></div>
+
+    <h3>Askeri Fabrika</h3>
+    <label>Ürün</label>
+    <select id="prod-item" onchange="engine.calcProdTime()">
+      <option value="drone_swarm">Sürü Drone</option>
+      <option value="ballistic_short">Balistik Füze — Kısa Menzil (2.000km)</option>
+      <option value="ballistic_medium">Balistik Füze — Orta Menzil (5.000km)</option>
+      <option value="ballistic_icbm">🚀 Kıtalararası Füze — ICBM (12.000km)</option>
+      <option value="tank">Ana Muharebe Tankı</option>
+      <option value="kara_birligi">🪖 Piyade Tümeni</option>
+      <option value="frigate">Fırkateyn</option>
+      <option value="gen5_jet">✈️ 5. Nesil Uçak</option>
+      <option value="nuke">☢️ Nükleer Başlık</option>
+    </select>
+    <label>Teknoloji Seviyesi (Tier 1-5)</label>
+    <input type="number" id="prod-tier" value="1" min="1" max="5" onchange="engine.calcProdTime()">
+    <!-- YENİ: silah özelleştirme — Menzil/Hasar/Hız arası bütçe dağıtımı -->
+    <div id="custom-weapon-box">
+      <label>Silah Özelleştirme (toplam %100 dağıt)</label>
+      <div class="slider-row"><span>🎯 Menzil</span><input type="range" id="custom-range" min="0" max="100" value="34" oninput="engine.rebalanceCustom('range')"><b id="custom-range-val">34%</b></div>
+      <div class="slider-row"><span>💥 Hasar</span><input type="range" id="custom-dmg" min="0" max="100" value="33" oninput="engine.rebalanceCustom('dmg')"><b id="custom-dmg-val">33%</b></div>
+      <div class="slider-row"><span>⚡ Hız</span><input type="range" id="custom-speed" min="0" max="100" value="33" oninput="engine.rebalanceCustom('speed')"><b id="custom-speed-val">33%</b></div>
+    </div>
+    <div id="prod-info" class="small-note"></div>
+    <button class="btn-tech" onclick="engine.startProduction()">⚙️ ÜRETİMİ BAŞLAT</button>
+    <div id="queue-box">Aktif üretim yok</div>
+
+    <!-- YENİ: Katmanlı Hava Savunması — Kısa/Orta/Uzun menzil ayrı yatırım -->
+    <h3>Katmanlı Hava Savunması</h3>
+    <label>Güçlendirilecek Şehir</label>
+    <select id="defense-city-select"></select>
+    <div class="small-note" id="defense-layers-info">Şehir seçince katman durumları burada görünecek.</div>
+    <div class="layer-btn-row">
+      <button class="btn-tech" onclick="engine.upgradeDefense('short')">🛡️ Kısa Menzil (50.000$)</button>
+      <button class="btn-tech" onclick="engine.upgradeDefense('medium')">🛡️🛡️ Orta Menzil (90.000$)</button>
+      <button class="btn-tech" onclick="engine.upgradeDefense('long')">🛡️🛡️🛡️ Uzun Menzil (140.000$)</button>
+    </div>
+    <div class="small-note">Kısa: drone/düşük irtifa · Orta: balistik/uçak · Uzun: ICBM/nükleer</div>
+
+    <h3>Envanter</h3>
+    <div id="inventory-list"></div>
+
+    <button onclick="engine.nextTurn()" class="btn-turn">⏳ TUR ATLA</button>
+  </div>
+
+  <div class="panel" id="right-panel">
+    <h2>Hedef: <span id="target-country-name">Seçilmedi</span></h2>
+    <div class="stat-box">🤝 İlişki <b id="target-relation"></b></div>
+    <div class="stat-box">⚖️ İstikrar <b id="target-stability"></b></div>
+    <div class="stat-box">🏙️ Sahip Olduğu Şehir <b id="target-strength"></b></div>
+    <div class="stat-box">🛡️ İttifak <b id="target-alliance">Yok</b></div>
+    <div class="stat-box">👑 Güç Kademesi <b id="target-tier"></b></div>
+    <button onclick="engine.getStatement()" style="background:#2a2a44;">💬 Açıklama İste</button>
+    <div class="quote-box" id="quote-box">—</div>
+
+    <!-- YENİ: İstihbarat / Fog of War — keşfedilmemiş ülkenin HSS'i ve gücü bilinmez -->
+    <h3>İstihbarat (Keşif Sisi)</h3>
+    <div class="small-note" id="recon-status">🌫️ Bu ülke hakkında istihbaratınız yok — şehir savunma gücü bilinmiyor.</div>
+    <button class="btn-dip" style="background:#374151;" onclick="engine.doRecon('spy')">🕵️ Casus Gönder (20.000$, düşük ifşa riski)</button>
+    <button class="btn-dip" style="background:#1e3a5f;" onclick="engine.doRecon('satellite')">🛰️ Uydu Keşfi (35.000$, ifşa riski yok)</button>
+
+    <h3>Diplomasi</h3>
+    <button class="btn-dip" onclick="engine.diplomacy('justify')">🕵️ Casus Belli Yarat (25.000$)</button>
+    <button class="btn-war" onclick="engine.diplomacy('war')">⚔️ SAVAŞ İLAN ET</button>
+    <button class="btn-dip" onclick="engine.diplomacy('send_envoy')">🕊️ Elçi Gönder (15.000$)</button>
+    <button class="btn-dip" style="background:#5a3a12;" onclick="engine.diplomacy('alliance')">🤝 İttifak Teklif Et (30.000$)</button>
+    <!-- YENİ: NATO benzeri karşılıklı zorunlu savunma paktı -->
+    <button class="btn-dip" style="background:#0d4d3a;" onclick="engine.diplomacy('defense_pact')">🛡️ Kolektif Savunma Paktı Kur (60.000$)</button>
+    <!-- YENİ: ekonomik blok / serbest ticaret anlaşması -->
+    <button class="btn-dip" style="background:#065f46;" onclick="engine.diplomacy('free_trade')">📈 Serbest Ticaret Anlaşması (20.000$)</button>
+    <button class="btn-dip" style="background:#3a3a5a;" onclick="engine.diplomacy('embargo')">⚖️ Ekonomik Ambargo</button>
+    <!-- YENİ: silah ambargosu ekonomik ambargodan ayrı -->
+    <button class="btn-dip" style="background:#4a1f3a;" onclick="engine.diplomacy('arms_embargo')">🔫 Silah Ambargosu</button>
+    <button class="btn-dip" style="background:#5a1f7a;" onclick="engine.diplomacy('cyber_attack')">💻 Siber Saldırı (40.000$)</button>
+    <button class="btn-dip" style="background:#7a1f3a;" onclick="engine.diplomacy('sabotage')">🕵️ Sabotaj Ajanı (30.000$)</button>
+    <button class="btn-dip" style="background:#1f4e7a;" onclick="engine.diplomacy('blockade')">🚢 Deniz Ablukası (1 Fırkateyn)</button>
+    <button class="btn-dip" style="background:#0d6e63;" onclick="engine.diplomacy('steal_tech')">🎯 Teknoloji Çal (50.000$)</button>
+
+    <h3>Harekât</h3>
+    <label>Hedef Şehir</label>
+    <select id="target-city-select" onchange="ui.updateAll()"></select>
+    <div id="target-city-info" class="hss-info">HSS: Bilinmiyor</div>
+    <label>Mühimmat</label>
+    <select id="attack-weapon" onchange="ui.updateAll()">
+      <option value="drone_swarm">Sürü Drone (1.500km, Hasar 8)</option>
+      <option value="ballistic_short">Balistik Füze — Kısa (2.000km, Hasar 18)</option>
+      <option value="ballistic_medium">Balistik Füze — Orta (5.000km, Hasar 24)</option>
+      <option value="ballistic_icbm">🚀 Kıtalararası Füze (12.000km, Hasar 30)</option>
+      <option value="gen5_jet">✈️ 5. Nesil Uçak (3.000km, Hasar 25)</option>
+      <option value="kara_birligi">🪖 Kara Birlikleri (3.000km lojistik sınırı, Hasar 30)</option>
+      <option value="nuke">☢️ Nükleer Başlık (ICBM gerekli, Şehri yok eder)</option>
+    </select>
+    <!-- YENİ: Havada yakıt ikmali — sadece uçak için, menzili sınırsız yapar -->
+    <label id="refuel-row" style="display:none;">
+      <input type="checkbox" id="use-refuel"> ⛽ Havada Yakıt İkmali Kullan (+50.000$, menzil sınırı kalkar)
+    </label>
+    <div id="range-info" class="range-info">Menzil bilgisi için hedef seçin</div>
+    <button class="btn-attack" onclick="engine.launchAttack()">🚀 ATEŞLE</button>
+
+    <h3>Askeri Loglar</h3>
+    <div id="log-box"></div>
+  </div>
+
+  <!-- YENİ: BM Güvenlik Konseyi paneli — P5 veto, karar türleri, kıta blokları oyu -->
+  <div class="panel" id="un-panel">
+    <h2>🇺🇳 BM Güvenlik Konseyi</h2>
+    <div class="small-note">P5 (ABD, Rusya, Çin, İngiltere, Fransa) veto hakkına sahiptir. Diğer üyeler ve 6 pasif kıta bloğu sadece oy kullanır.</div>
+
+    <h3>Karar Öner</h3>
+    <div class="un-propose-row">
+      <select id="un-target-select"></select>
+      <select id="un-resolution-type">
+        <option value="embargo">Ambargo Kararı</option>
+        <option value="peacekeeping">Barış Gücü Kararı</option>
+        <option value="condemnation">Kınama Kararı</option>
+        <option value="intervention">Müdahale Yetkisi</option>
+        <option value="nuclear_cap">Nükleer Denetim Kararı</option>
+      </select>
+    </div>
+    <button class="btn-tech" onclick="engine.proposeResolution()">📜 Karar Öner ve Oylamaya Sun</button>
+
+    <h3>Aktif / Geçmiş Kararlar</h3>
+    <div id="un-resolutions-list" class="un-list">Henüz bir karar önerilmedi.</div>
+
+    <h3>Nükleer Denetim Rejimi</h3>
+    <div class="stat-box">☢️ Küresel Nükleer Sınır <b id="un-nuke-cap">—</b></div>
+    <div class="small-note" id="un-sanction-warning"></div>
+  </div>
+</div>
+
+<div id="gameover-screen">
+  <h1 id="go-title"></h1>
+  <div class="score-card" id="score-card"></div>
+  <div style="display:flex;gap:8px;">
+    <button onclick="engine.copyScore()" style="padding:12px 20px;">📋 Sonucu Kopyala</button>
+    <button onclick="saveSystem.reset()" style="padding:12px 20px;background:#7a1f1f;">Yeniden Başla</button>
+  </div>
+</div>
+
+<script src="geo.js"></script>
+<script src="game.js"></script>
 </body>
 </html>

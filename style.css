@@ -1,138 +1,153 @@
-/* --- TEMEL AYARLAR --- */
-* { 
-    box-sizing: border-box; 
-    margin: 0; 
-    padding: 0; 
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+:root{
+  --bg:#070c14; --panel:#0d1420; --panel2:#0a0f18; --line:#1c2b3f;
+  --accent:#2fb8c6; --accent2:#e0663f; --danger:#c23b3b; --gold:#c9a24b;
+  --good:#3fb87f; --text:#dbe6f2; --muted:#7d8fa3;
 }
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Bahnschrift','Segoe UI',Tahoma,Geneva,Verdana,sans-serif;}
+html,body{height:100%;}
+body{background:radial-gradient(ellipse at top,#0b1420 0%,#050a10 70%);color:var(--text);overflow:hidden;}
 
-body { 
-    background-color: #050b14; /* Koyu askeri radar teması */
-    color: #e2e8f0; 
-    height: 100vh; 
-    overflow: hidden; 
+/* ================= MASAÜSTÜ (varsayılan) ================= */
+#game-container{display:flex;width:100vw;height:100vh;padding:10px;gap:10px;}
+/* HTML kaynak sırası mobil-öncelikli (harita en üstte) yazıldığı için
+   masaüstünde görsel sırayı elle düzeltiyoruz: SOL PANEL — HARİTA — SAĞ PANEL
+   Bu kural SADECE ≥900px'te aktif olsun diye kendi media query'sine alındı. */
+@media (min-width: 900px){
+  #left-panel{order:1;}
+  #map-wrapper{order:2;}
+  #right-panel{order:3; padding-top:52px;} /* sağ üstteki sabit BM/sekme çubuğu başlığı kapatmasın diye */
 }
-
-#game-container { 
-    display: flex; 
-    width: 100vw; 
-    height: 100vh; 
-    padding: 10px; 
-    gap: 15px; 
+.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:8px;width:24%;min-width:300px;overflow-y:auto;box-shadow:inset 0 0 30px rgba(0,0,0,.5);
+  /* KRİTİK: panel yüksekliği viewport'a göre SABİTLENMELİ, yoksa içindeki
+     flex:1 öğeler (log-box gibi) sınırsız büyür — bu satır olmadan bazı
+     tarayıcı/işletim sistemi kombinasyonlarında log taşması yaşanabiliyordu. */
+  height:100%; max-height:100%;
 }
+.panel::-webkit-scrollbar{width:6px;} .panel::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+h2{color:var(--accent);font-size:1.05rem;letter-spacing:.5px;border-bottom:2px solid var(--line);padding-bottom:6px;text-transform:uppercase;}
+h3{color:var(--muted);font-size:.75rem;letter-spacing:1.5px;margin-top:8px;text-transform:uppercase;border-left:3px solid var(--accent2);padding-left:6px;}
+.stat-box{background:var(--panel2);padding:8px 10px;border-radius:4px;font-size:.85rem;border-left:3px solid var(--accent);display:flex;justify-content:space-between;}
+.stat-box b{color:#fff;}
+.tension-box{border-left-color:var(--danger);color:#ffb3b3;font-weight:bold;}
+.support-box{border-left-color:var(--gold);}
+button{background:#1d4e6e;color:#fff;border:1px solid #2a6a92;padding:9px;border-radius:4px;cursor:pointer;font-weight:600;font-size:.8rem;transition:.15s;}
+button:hover{filter:brightness(1.25);transform:translateY(-1px);}
+button:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+.btn-tech{background:#0d6e63;border-color:#12968a;}
+.btn-dip{background:#7a5a12;border-color:var(--gold);}
+.btn-war{background:#7a1f1f;border-color:var(--danger);}
+.btn-attack{background:var(--danger);font-size:.95rem;box-shadow:0 0 12px rgba(194,59,59,.5);}
+.btn-turn{background:var(--good);font-size:1rem;margin-top:auto;padding:14px;}
+select,input{background:#020617;color:#fff;border:1px solid #2c3e54;padding:8px;border-radius:4px;font-size:.85rem;outline:none;width:100%;}
+select:focus,input:focus{border-color:var(--accent);}
+/* YENİ: kaydırıcı (vergi, silah özelleştirme) ve onay kutuları genel input
+   kuralından farklı görünmeli — kutu değil, ince bir slider/checkbox olsun. */
+input[type=range]{padding:0;border:none;background:transparent;height:20px;accent-color:var(--accent);width:100%;}
+input[type=checkbox]{width:auto;height:auto;padding:0;accent-color:var(--gold);}
+label{font-size:.72rem;color:var(--muted);margin-top:4px;}
+.hss-info{font-size:.78rem;color:#a6f0c6;background:#0f2e22;padding:6px;border-radius:4px;text-align:center;}
+.range-info{font-size:.75rem;padding:6px;border-radius:4px;text-align:center;background:#1a2438;color:#9fb4cc;}
+.range-bad{background:#3a1414;color:#ff9d9d;}
+/* ESKİ HATA: sadece min-height:120px vardı, max-height yoktu — flex öğesi
+   içerik arttıkça sınırsız büyüyüp tüm sayfayı itiyordu. Şimdi min-height:0
+   (flexbox'ta overflow'un düzgün çalışması için şart) + sabit bir max-height
+   ile kutu artık kendi içinde kayıyor, sayfayı büyütmüyor. */
+#log-box{flex:1 1 auto;min-height:0;max-height:100%;background:#000;border:1px solid #2c3e54;border-radius:4px;padding:8px;overflow-y:auto;font-family:'Consolas','Courier New',monospace;font-size:.72rem;}
+#map-wrapper{flex:1;position:relative;background:radial-gradient(ellipse at center,#0a1c30,#040a12);border:1px solid var(--line);border-radius:6px;overflow:hidden;box-shadow:inset 0 0 60px rgba(0,0,0,.8);}
+#game-map,#animCanvas{position:absolute;top:0;left:0;width:100%;height:100%;}
+#animCanvas{pointer-events:none;z-index:10;}
+#queue-box,#inventory-list{font-size:.78rem;background:#020617;padding:6px;border-radius:4px;max-height:90px;overflow-y:auto;}
+.small-note{font-size:.68rem;color:var(--muted);line-height:1.3;}
+.badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:.65rem;margin-left:4px;}
+.badge-war{background:var(--danger);}
+.badge-embargo{background:#7a5a12;}
+.badge-jam{background:#5a1f7a;}
+.badge-blockade{background:#1f4e7a;}
+.quote-box{font-size:.78rem;background:#101c2c;border-left:3px solid var(--gold);padding:8px;border-radius:4px;font-style:italic;color:#e2d8b8;min-height:20px;}
+@keyframes shake{0%{transform:translate(1px,1px) rotate(0);}20%{transform:translate(-3px,0) rotate(1deg);}50%{transform:translate(-1px,2px) rotate(-1deg);}100%{transform:translate(1px,-2px) rotate(-1deg);}}
+.shake-active{animation:shake .5s infinite;}
+#gameover-screen{position:fixed;inset:0;background:rgba(0,0,0,.94);display:none;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:10px;text-align:center;padding:20px;}
+#gameover-screen h1{font-size:2rem;color:var(--accent2);}
+.score-card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:18px;max-width:420px;width:100%;text-align:left;font-size:.85rem;line-height:1.9;}
+.score-card b{color:var(--accent);}
 
-/* --- YAN PANELLER --- */
-.panel { 
-    background: rgba(15, 23, 42, 0.95); 
-    border: 1px solid #1e293b; 
-    border-radius: 8px; 
-    padding: 20px; 
-    display: flex; 
-    flex-direction: column; 
-    gap: 12px; 
-    width: 25%; 
-    min-width: 320px;
-    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
-    overflow-y: auto;
+/* Sekme çubuğu — masaüstünde sağ üstte küçük bir buton grubu olarak durur
+   (esas işlevi BM panelini açmak; sol/sağ panel zaten masaüstünde ikisi
+   birden görünür olduğundan o iki buton masaüstünde etkisiz ama zararsızdır).
+   Mobilde aşağıdaki media query tam genişlikte klasik sekme çubuğuna çevirir. */
+#mobile-tabs{display:flex;gap:6px;position:fixed;top:14px;right:14px;z-index:50;}
+#mobile-tabs button{background:#111d2e;border:1px solid var(--line);padding:8px 10px;font-size:.72rem;border-radius:4px;}
+#mobile-tabs button.active{background:var(--accent);color:#001018;}
+
+/* ================= ÜLKE SEÇİM EKRANI ================= */
+#country-select-screen{position:fixed;inset:0;background:radial-gradient(ellipse at top,#0b1420 0%,#050a10 80%);z-index:1000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;padding:24px;overflow-y:auto;}
+#country-select-screen h1{color:var(--accent);font-size:1.4rem;text-align:center;letter-spacing:.5px;}
+#country-cards{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;max-width:1000px;}
+#load-code-box{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;}
+#load-code-area textarea{font-size:.7rem;font-family:'Consolas',monospace;resize:none;}
+.country-card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:8px;padding:16px;width:220px;text-align:center;cursor:pointer;transition:.15s;}
+.country-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 4px 18px rgba(47,184,198,.25);}
+
+/* ================= SENKRONİZASYON KUTUSU ================= */
+#sync-box{display:flex;flex-direction:column;gap:5px;background:#0a121e;padding:8px;border-radius:5px;border:1px solid var(--line);}
+#sync-box textarea{font-size:.65rem;resize:none;font-family:'Consolas',monospace;}
+
+/* ================= YENİ BİLEŞENLER ================= */
+
+/* Harita üstü bilgi kutusu (kıta bloğu / ülke ipucu) */
+.map-tooltip{position:absolute;background:rgba(5,10,18,.95);border:1px solid var(--accent);border-radius:5px;padding:8px 10px;font-size:.75rem;color:var(--text);max-width:220px;z-index:20;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.5);}
+
+/* Vergi oranı etiketi (slider'ın üstündeki değer) */
+#tax-rate-label{color:#fff;}
+
+/* Silah özelleştirme kutusu — Menzil/Hasar/Hız dağıtımı */
+#custom-weapon-box{background:#0a121e;padding:8px;border-radius:5px;border:1px solid var(--line);margin:4px 0;display:flex;flex-direction:column;gap:4px;}
+.slider-row{display:flex;align-items:center;gap:8px;font-size:.72rem;color:var(--muted);}
+.slider-row span{width:60px;flex-shrink:0;}
+.slider-row input[type=range]{flex:1;}
+.slider-row b{color:#fff;width:34px;text-align:right;flex-shrink:0;}
+
+/* Katmanlı hava savunması buton sırası — dar panelde sarmalı (wrap) düzen */
+.layer-btn-row{display:flex;flex-wrap:wrap;gap:5px;}
+.layer-btn-row button{flex:1;min-width:110px;font-size:.68rem;padding:8px 4px;}
+
+/* Yakıt ikmali onay kutusu satırı */
+#refuel-row{display:flex;align-items:center;gap:6px;font-size:.75rem;color:#facc15;background:#241c07;padding:6px 8px;border-radius:4px;margin:4px 0;}
+
+/* Mülteci akını satırı — turuncu vurgu */
+#refugee-box{border-left-color:#f59e0b;}
+
+/* BM Güvenlik Konseyi paneli — ekran boyutundan bağımsız, ortalanmış sabit
+   pencere (modal) olarak açılır/kapanır; .panel sınıfından arka plan,
+   kenarlık, iç boşluk ve kaydırma çubuğu stilini miras alır, sadece
+   konum/boyut/görünürlük burada geçersiz kılınıyor. */
+#un-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:560px; max-height:82vh;
+  z-index:600; display:none;
 }
+#un-panel.open{display:flex;}
+.un-propose-row{display:flex;gap:6px;flex-wrap:wrap;}
+.un-propose-row select{flex:1;min-width:140px;}
+.un-list{font-size:.75rem;background:#020617;padding:8px;border-radius:4px;max-height:220px;overflow-y:auto;}
+.un-list .resolution-item{border-bottom:1px solid #1a2b42;padding:6px 0;}
+.un-list .veto{color:#ff6b6b;}
+.un-list .passed{color:var(--good);}
+.un-list .failed{color:var(--muted);}
 
-h2 { color: #38bdf8; font-size: 1.2rem; border-bottom: 2px solid #1e293b; padding-bottom: 5px; }
-h3 { color: #94a3b8; font-size: 0.9rem; letter-spacing: 1px; margin-top: 10px; text-transform: uppercase;}
+/* Karar/panel açıkken arkayı hafif karart (game.js body'e ekleyip çıkaracak) */
+body.un-open::before{content:"";position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:590;}
 
-.stat-box { 
-    background: #0f172a; 
-    padding: 10px; 
-    border-radius: 4px; 
-    font-size: 0.95rem; 
-    border-left: 3px solid #38bdf8;
-}
-.tension-box { border-left-color: #ef4444; color: #fca5a5; font-weight: bold;}
-
-/* --- BUTONLAR --- */
-button { 
-    background: #2563eb; 
-    color: white; 
-    border: none; 
-    padding: 12px; 
-    border-radius: 4px; 
-    cursor: pointer; 
-    font-weight: bold; 
-    transition: 0.2s; 
-}
-button:hover { background: #1d4ed8; transform: translateY(-1px); }
-
-.btn-tech { background: #0d9488; }
-.btn-tech:hover { background: #0f766e; }
-
-.btn-dip { background: #ca8a04; }
-.btn-dip:hover { background: #a16207; }
-
-.btn-war { background: #991b1b; }
-.btn-war:hover { background: #7f1d1d; }
-
-.btn-attack { background: #dc2626; font-size: 1.1rem; text-shadow: 1px 1px 2px black; box-shadow: 0 0 10px rgba(220,38,38,0.5);}
-.btn-attack:hover { background: #b91c1c; box-shadow: 0 0 15px rgba(220,38,38,0.8);}
-
-.btn-turn { background: #16a34a; font-size: 1.1rem; margin-top: auto; padding: 15px; }
-.btn-turn:hover { background: #15803d; }
-
-/* --- INPUT VE SELECT (Açılır Menüler) --- */
-select, input { 
-    background: #020617; 
-    color: white; 
-    border: 1px solid #334155; 
-    padding: 10px; 
-    border-radius: 4px; 
-    font-size: 1rem;
-    outline: none;
-}
-select:focus, input:focus { border-color: #38bdf8; }
-
-.hss-info { 
-    font-size: 0.85rem; 
-    color: #86efac; 
-    background: #14532d; 
-    padding: 8px; 
-    border-radius: 4px; 
-    text-align: center;
-}
-
-/* --- ASKERİ LOG KUTUSU --- */
-#log-box { 
-    flex: 1; 
-    background: #000; 
-    border: 1px solid #334155; 
-    border-radius: 4px; 
-    padding: 12px; 
-    overflow-y: auto; 
-    font-family: 'Consolas', 'Courier New', monospace; 
-    font-size: 0.85rem; 
-    min-height: 150px;
-}
-
-/* ========================================= */
-/* --- HARİTA VE ANİMASYON SİHRİ BURADA --- */
-/* ========================================= */
-#map-wrapper { 
-    flex: 1; 
-    position: relative; /* Container göreceli olmalı */
-    background: #011024; /* Okyanus rengi */
-    border: 2px solid #1e293b; 
-    border-radius: 8px; 
-    overflow: hidden; 
-    box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
-}
-
-#game-map, #animCanvas {
-    position: absolute; /* İkisi tam olarak aynı koordinatları kaplar */
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-}
-
-/* Tıklamaların SVG haritasına geçmesi için kanvas tıklanmaz yapılır */
-#animCanvas {
-    pointer-events: none; 
-    z-index: 10; /* Animasyonlar haritanın üstünde çıksın diye */
+/* ================= MOBİL (≤899px) ================= */
+@media (max-width: 899px){
+  body{overflow-y:auto;}
+  #game-container{flex-direction:column;height:auto;min-height:100vh;padding:6px;gap:6px;}
+  #map-wrapper{width:100%;height:46vh;min-height:280px;order:1;flex:none;}
+  #mobile-tabs{position:static;order:2;width:100%;}
+  #mobile-tabs button{flex:1;padding:10px 4px;font-size:.75rem;}
+  .panel{width:100%;min-width:0;order:3;max-height:none;height:auto;display:none;}
+  .panel.mobile-active{display:flex;}
+  h2{font-size:1rem;}
+  button{padding:12px;font-size:.85rem;}
+  #log-box{min-height:160px;max-height:220px;}
 }
