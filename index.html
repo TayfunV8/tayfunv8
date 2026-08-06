@@ -4,6 +4,43 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>TAYFUN — Kara Kartal Doktrini</title>
+
+<!-- YENİ: GÜVENLİK AĞI — style.css herhangi bir sebeple (yanlış klasör,
+     eksik dosya, önbellek vb.) yüklenemezse oyun tamamen çıplak/bozuk
+     görünmesin diye en kritik düzen kuralları burada TEKRAR tanımlı.
+     Bu blok BİLİNÇLİ olarak <link rel="stylesheet"> etiketinden ÖNCE
+     duruyor: style.css gerçekten yüklenirse, aynı seçiciler için o
+     her zaman bunun ÜZERİNE yazar (kaynak sırasında sonra gelen kazanır).
+     Yani style.css çalışıyorsa bu blok fark edilmez; çalışmıyorsa oyun
+     yine de düzgün bir düzende ve okunaklı kalır. -->
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:#070c14;color:#dbe6f2;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden;}
+  button,select,input{font-family:inherit;}
+  #country-select-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px;overflow-y:auto;}
+  #country-cards{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:1400px;}
+  .country-card{background:#0d1420;border:1px solid #1c2b3f;border-radius:8px;padding:14px;width:220px;text-align:center;cursor:pointer;}
+  #game-container{display:flex;width:100vw;height:100vh;padding:10px;gap:10px;}
+  #map-wrapper{order:2;flex:1;position:relative;background:#050a12;border-radius:6px;overflow:hidden;}
+  #game-map{position:absolute;top:0;left:0;width:100%;height:100%;}
+  #animCanvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+  #left-panel{order:1;} #right-panel{order:3;}
+  .panel{background:#0d1420;border:1px solid #1c2b3f;border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:8px;width:24%;min-width:300px;height:100%;overflow-y:auto;}
+  #un-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:560px;max-height:82vh;z-index:600;display:none;}
+  #un-panel.open{display:flex;}
+  #mobile-tabs{display:flex;gap:6px;position:fixed;top:14px;right:14px;z-index:650;}
+  select,input,button{background:#020617;color:#fff;border:1px solid #2c3e54;padding:8px;border-radius:4px;}
+  button{cursor:pointer;}
+  h2,h3{color:#2fb8c6;border-bottom:1px solid #1c2b3f;padding-bottom:4px;}
+  #gameover-screen{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:1000;}
+  @media (max-width:899px){
+    #game-container{flex-direction:column;}
+    #map-wrapper{order:1;width:100%;height:46vh;flex:none;}
+    .panel{width:100%;min-width:0;height:auto;order:3;display:none;}
+    .panel.mobile-active{display:flex;}
+    #mobile-tabs{position:static;order:2;width:100%;}
+  }
+</style>
 <link rel="stylesheet" href="style.css">
 <!-- YENİ: Gerçek dünya haritası için D3 + TopoJSON (CDN). İnternet yoksa
      geo.js otomatik olarak elle çizilmiş yedek haritaya düşer, oyun
@@ -14,8 +51,16 @@
 <body>
 
 <div id="country-select-screen">
-  <h1>🌍 TAYFUN — Oynayacağınız Ülkeyi Seçin</h1>
-  <div id="country-cards"></div>
+  <h1>🌍 TAYFUN — Kara Kartal Doktrini</h1>
+  <!-- YENİ: Kart ızgarası yerine tek dropdown + canlı önizleme (referans:
+       Pax Erenia tarzı seçim ekranı). Native <select> tarayıcıda yazarak
+       hızlı atlama da destekler. -->
+  <div id="country-picker-box">
+    <label for="country-dropdown" class="small-note">Oynayacağınız Ülke</label>
+    <select id="country-dropdown" onchange="ui.updateCountryPreview()"></select>
+    <div id="country-preview"></div>
+    <button id="btn-start-sim" onclick="engine.startGameFromDropdown()">🚀 SİMÜLASYONU BAŞLAT</button>
+  </div>
   <div id="load-code-box">
     <button onclick="document.getElementById('load-code-area').style.display='flex'; this.style.display='none';" style="background:#0d6e63;">📥 Kayıtlı Kodum Var, Devam Et</button>
     <div id="load-code-area" style="display:none;flex-direction:column;gap:6px;width:100%;max-width:400px;">
@@ -32,6 +77,12 @@
     <canvas id="animCanvas"></canvas>
     <!-- YENİ: kıta bloğu / ülke bilgi ipucu kutusu (haritaya tıklayınca) -->
     <div id="map-tooltip" class="map-tooltip" style="display:none;"></div>
+    <!-- YENİ: Harita yakınlaştırma/uzaklaştırma kontrolleri -->
+    <div id="map-zoom-controls">
+      <button onclick="ui.zoomMap(1.3)" title="Yakınlaştır">➕</button>
+      <button onclick="ui.zoomMap(1/1.3)" title="Uzaklaştır">➖</button>
+      <button onclick="ui.resetMapZoom()" title="Sıfırla">⤢</button>
+    </div>
   </div>
 
   <!-- Mobilde görünür sekme çubuğu — YENİ: 3. sekme BM Konseyi -->
@@ -62,12 +113,40 @@
     <div class="stat-box">⏳ Tur <b id="val-turn"></b></div>
     <div class="stat-box tension-box">🌍 Global Tansiyon <b id="val-tension"></b></div>
     <div class="stat-box" id="refugee-box" style="display:none;">🏕️ Mülteci Akını <b id="val-refugee"></b></div>
+    <!-- YENİ: İç muhalefet / hükümet krizi uyarı aşaması — ani "oyun bitti"
+         yerine önceden gerilim biriktiren bir uyarı satırı -->
+    <div class="stat-box" id="gov-crisis-box" style="display:none;background:#3a1414;border-left-color:#ff3344;">⚠️ Hükümet Krizi <b id="val-gov-crisis"></b></div>
 
     <!-- YENİ: Vergi Politikası — yüksek vergi = çok gelir, az halk desteği -->
     <h3>Vergi Politikası</h3>
     <label>Vergi Oranı: <b id="tax-rate-label">%30</b></label>
     <input type="range" id="tax-rate-slider" min="0" max="100" value="30" step="5" oninput="engine.setTaxRate(this.value)">
     <div class="small-note">Düşük vergi → az gelir, yüksek halk desteği. Yüksek vergi → çok gelir, düşük halk desteği.</div>
+
+    <!-- YENİ: Yönetim Biçimi — devrimle değiştirilebilen ideoloji, her biri
+         farklı bonus/ceza verir. Yasalar ayrı ayrı açılıp kapatılabilir. -->
+    <h3>Yönetim Biçimi</h3>
+    <div class="small-note">Mevcut: <b id="current-ideology">Demokrasi</b></div>
+    <select id="ideology-select">
+      <option value="democracy">Demokrasi (Ticaret geliri +%20, savaşta halk desteği hızlı düşer)</option>
+      <option value="autocracy">Otokrasi (Asker üretimi ucuz, isyan riski daha düşük)</option>
+      <option value="technocracy">Teknokrasi (Ar-Ge süresi kısalır, ticaret geliri normal)</option>
+    </select>
+    <button class="btn-tech" style="background:#5a3a8a;" onclick="engine.doRevolution()">🔻 Devrim Yap (Maliyet: İstikrar -20)</button>
+
+    <h3>Yasalar &amp; Politikalar</h3>
+    <div class="law-row">
+      <div><b>Sıkıyönetim</b><div class="small-note">Asker üretimi %50 ucuzlar, ancak isyan riski artar.</div></div>
+      <button class="btn-law" id="law-btn-martial" onclick="engine.toggleLaw('martial')">YASALAŞTIR</button>
+    </div>
+    <div class="law-row">
+      <div><b>Zorunlu Askerlik</b><div class="small-note">Her tur bedava piyade gelir, ekonomi küçülür.</div></div>
+      <button class="btn-law" id="law-btn-draft" onclick="engine.toggleLaw('draft')">YASALAŞTIR</button>
+    </div>
+    <div class="law-row">
+      <div><b>Açık Sınırlar</b><div class="small-note">Ticaret geliri artar, isyan riski azalır.</div></div>
+      <button class="btn-law" id="law-btn-openborders" onclick="engine.toggleLaw('openborders')">YASALAŞTIR</button>
+    </div>
 
     <h3>Ar-Ge Merkezi</h3>
     <button class="btn-tech" id="btn-nuclear" onclick="engine.research('nuclear')">☢️ Nükleer Silahlanma (120.000$)</button>
@@ -81,6 +160,8 @@
     <!-- YENİ: uçak yakıt ikmali teknolojisi -->
     <button class="btn-tech" id="btn-refuel" onclick="engine.research('air_refuel')">⛽ Havada Yakıt İkmali Programı (100.000$)</button>
     <div class="small-note" id="tech-status"></div>
+    <!-- YENİ: Ar-Ge artık anlık değil, kuyrukta birkaç tur bekliyor -->
+    <div id="research-queue-box" class="small-note">Aktif Ar-Ge yok</div>
 
     <h3>Askeri Fabrika</h3>
     <label>Ürün</label>
@@ -133,6 +214,8 @@
     <div class="stat-box">🏙️ Sahip Olduğu Şehir <b id="target-strength"></b></div>
     <div class="stat-box">🛡️ İttifak <b id="target-alliance">Yok</b></div>
     <div class="stat-box">👑 Güç Kademesi <b id="target-tier"></b></div>
+    <!-- YENİ: AI ülkelerin artık kişilik/doktrini var — istihbarat olmadan bilinmez -->
+    <div class="stat-box" id="target-doctrine-box">🎭 Doktrin <b id="target-doctrine">Bilinmiyor</b></div>
     <button onclick="engine.getStatement()" style="background:#2a2a44;">💬 Açıklama İste</button>
     <div class="quote-box" id="quote-box">—</div>
 
@@ -141,6 +224,11 @@
     <div class="small-note" id="recon-status">🌫️ Bu ülke hakkında istihbaratınız yok — şehir savunma gücü bilinmiyor.</div>
     <button class="btn-dip" style="background:#374151;" onclick="engine.doRecon('spy')">🕵️ Casus Gönder (20.000$, düşük ifşa riski)</button>
     <button class="btn-dip" style="background:#1e3a5f;" onclick="engine.doRecon('satellite')">🛰️ Uydu Keşfi (35.000$, ifşa riski yok)</button>
+
+    <!-- YENİ: Tehdit İstihbaratı — AI artık size de savaş açabilir, ama
+         önce "sınırda asker yığıyor" gibi bir uyarı aşaması olur. -->
+    <h3>Tehdit İstihbaratı</h3>
+    <div id="threat-warnings-box" class="small-note">Bilinen bir tehdit yok.</div>
 
     <h3>Diplomasi</h3>
     <button class="btn-dip" onclick="engine.diplomacy('justify')">🕵️ Casus Belli Yarat (25.000$)</button>
@@ -154,25 +242,41 @@
     <button class="btn-dip" style="background:#3a3a5a;" onclick="engine.diplomacy('embargo')">⚖️ Ekonomik Ambargo</button>
     <!-- YENİ: silah ambargosu ekonomik ambargodan ayrı -->
     <button class="btn-dip" style="background:#4a1f3a;" onclick="engine.diplomacy('arms_embargo')">🔫 Silah Ambargosu</button>
+    <!-- YENİ: Hava sahasını kapatma — düşmanın uçak/İCBM güzergahını zorlaştırır -->
+    <button class="btn-dip" style="background:#2b3a4a;" onclick="engine.diplomacy('airspace_ban')">✈️🚫 Hava Sahasını Kapat</button>
     <button class="btn-dip" style="background:#5a1f7a;" onclick="engine.diplomacy('cyber_attack')">💻 Siber Saldırı (40.000$)</button>
     <button class="btn-dip" style="background:#7a1f3a;" onclick="engine.diplomacy('sabotage')">🕵️ Sabotaj Ajanı (30.000$)</button>
     <button class="btn-dip" style="background:#1f4e7a;" onclick="engine.diplomacy('blockade')">🚢 Deniz Ablukası (1 Fırkateyn)</button>
     <button class="btn-dip" style="background:#0d6e63;" onclick="engine.diplomacy('steal_tech')">🎯 Teknoloji Çal (50.000$)</button>
+    <!-- YENİ: Barış müzakeresi — oyuncu aktif olarak şartlı barış teklif edebilir -->
+    <button class="btn-dip" style="background:#1e4d3a;" onclick="engine.diplomacy('peace_offer_neutral')">🕊️ Barış Teklif Et (Şartsız)</button>
+    <button class="btn-dip" style="background:#1e4d3a;" onclick="engine.diplomacy('peace_offer_reparations')">🕊️ Barış Teklif Et (Tazminat Öde)</button>
+    <button class="btn-dip" style="background:#1e4d3a;" onclick="engine.diplomacy('peace_offer_cede')">🕊️ Barış Teklif Et (Şehir Devret)</button>
 
     <h3>Harekât</h3>
     <label>Hedef Şehir</label>
     <select id="target-city-select" onchange="ui.updateAll()"></select>
     <div id="target-city-info" class="hss-info">HSS: Bilinmiyor</div>
+    <!-- YENİ: Direniş göstergesi — füze/uçak sadece bunu düşürür, şehri
+         ELE GEÇİRMEZ; şehri sadece kara/çıkarma/hava indirme harekâtı alır,
+         düşük direniş bu harekâtlarda daha az asker kaybı sağlar. -->
+    <div id="target-resistance-info" class="hss-info">Direniş: Bilinmiyor</div>
     <label>Mühimmat</label>
     <select id="attack-weapon" onchange="ui.updateAll()">
-      <option value="drone_swarm">Sürü Drone (1.500km, Hasar 8)</option>
-      <option value="ballistic_short">Balistik Füze — Kısa (2.000km, Hasar 18)</option>
-      <option value="ballistic_medium">Balistik Füze — Orta (5.000km, Hasar 24)</option>
-      <option value="ballistic_icbm">🚀 Kıtalararası Füze (12.000km, Hasar 30)</option>
-      <option value="gen5_jet">✈️ 5. Nesil Uçak (3.000km, Hasar 25)</option>
-      <option value="kara_birligi">🪖 Kara Birlikleri (3.000km lojistik sınırı, Hasar 30)</option>
-      <option value="nuke">☢️ Nükleer Başlık (ICBM gerekli, Şehri yok eder)</option>
+      <option value="drone_swarm">Sürü Drone (1.500km, Hasar 8) — sadece direnişi düşürür</option>
+      <option value="ballistic_short">Balistik Füze — Kısa (2.000km, Hasar 18) — sadece direnişi düşürür</option>
+      <option value="ballistic_medium">Balistik Füze — Orta (5.000km, Hasar 24) — sadece direnişi düşürür</option>
+      <option value="ballistic_icbm">🚀 Kıtalararası Füze (12.000km, Hasar 30) — sadece direnişi düşürür</option>
+      <option value="gen5_jet">✈️ 5. Nesil Uçak (3.000km, Hasar 25) — sadece direnişi düşürür</option>
+      <option value="nuke">☢️ Nükleer Başlık (ICBM gerekli) — sadece direnişi düşürür, şehri ele geçirmez</option>
+      <option value="kara_birligi">🪖 Kara Harekâtı (3.000km, Hasar 30) — ŞEHRİ ELE GEÇİRİR</option>
+      <option value="amphibious">🚢 Çıkarma Harekâtı (20.000km, Hasar 30) — 3 TUR SEVKİYAT, sonra ŞEHRİ ELE GEÇİRİR</option>
+      <option value="airborne">🪂 Hava İndirme Harekâtı (20.000km, Hasar 25) — ANINDA, ŞEHRİ ELE GEÇİRİR</option>
     </select>
+    <div class="small-note">Yalnızca Kara/Çıkarma/Hava İndirme harekâtları şehri ilhak edebilir. Diğerleri sadece hasar verir ve direnişi düşürür — düşük direniş, harekât sırasında daha az asker kaybı sağlar. Çıkarma Harekâtı gemi inşa edip yol aldığından 3 tur sürer ve bu sürede düşman fırkateyni varsa konvoy vurulabilir.</div>
+    <!-- YENİ: Devam eden çıkarma sevkiyatları — emir verildiği an başlar,
+         3 tur boyunca yolda, iptal edilemez. -->
+    <div id="ongoing-ops-box" class="small-note" style="display:none;"></div>
     <!-- YENİ: Havada yakıt ikmali — sadece uçak için, menzili sınırsız yapar -->
     <label id="refuel-row" style="display:none;">
       <input type="checkbox" id="use-refuel"> ⛽ Havada Yakıt İkmali Kullan (+50.000$, menzil sınırı kalkar)
@@ -208,6 +312,17 @@
     <h3>Nükleer Denetim Rejimi</h3>
     <div class="stat-box">☢️ Küresel Nükleer Sınır <b id="un-nuke-cap">—</b></div>
     <div class="small-note" id="un-sanction-warning"></div>
+    <!-- YENİ: Açık kapatma butonu — önceden sadece sekme değiştirerek
+         kapanıyordu, bu belli değildi. -->
+    <button class="btn-tech" style="background:#374151;" onclick="ui.closeUNPanel()">Kapat</button>
+  </div>
+
+  <!-- YENİ: Tur Sonu Raporu — her "TUR ATLA" sonrası o turda ne olduğunu
+       özetleyen, kapatılabilir bir pencere (BM paneliyle aynı mimari). -->
+  <div class="panel" id="turn-report-panel">
+    <h2>📋 Tur Raporu — <span id="turn-report-year"></span></h2>
+    <div id="turn-report-body" class="un-list"></div>
+    <button class="btn-tech" onclick="ui.closeTurnReport()">Kapat</button>
   </div>
 </div>
 

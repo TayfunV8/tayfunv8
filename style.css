@@ -75,7 +75,7 @@ label{font-size:.72rem;color:var(--muted);margin-top:4px;}
    (esas işlevi BM panelini açmak; sol/sağ panel zaten masaüstünde ikisi
    birden görünür olduğundan o iki buton masaüstünde etkisiz ama zararsızdır).
    Mobilde aşağıdaki media query tam genişlikte klasik sekme çubuğuna çevirir. */
-#mobile-tabs{display:flex;gap:6px;position:fixed;top:14px;right:14px;z-index:50;}
+#mobile-tabs{display:flex;gap:6px;position:fixed;top:14px;right:14px;z-index:650;}
 #mobile-tabs button{background:#111d2e;border:1px solid var(--line);padding:8px 10px;font-size:.72rem;border-radius:4px;}
 #mobile-tabs button.active{background:var(--accent);color:#001018;}
 
@@ -136,7 +136,56 @@ label{font-size:.72rem;color:var(--muted);margin-top:4px;}
 .un-list .failed{color:var(--muted);}
 
 /* Karar/panel açıkken arkayı hafif karart (game.js body'e ekleyip çıkaracak) */
-body.un-open::before{content:"";position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:590;}
+body.un-open::before{content:"";position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:590;pointer-events:none;}
+/* KRİTİK DÜZELTME: pointer-events:none olmadan bu karanlık katman panel
+   açıkken TÜM sayfayı (sekme butonları dahil) tıklanamaz hale getiriyordu
+   — kullanıcı paneli asla kapatamıyordu. Artık sadece görsel bir katman,
+   tıklamalar sorunsuzca altındaki elemanlara (sekmeler dahil) ulaşıyor. */
+
+/* ================= YENİ BİLEŞENLER (2. tur: gerçekçilik paketi) ================= */
+
+/* Ar-Ge Kuyruğu — üretim kuyruğuyla aynı görünüm dilinde (artık anlık değil) */
+#research-queue-box{font-size:.78rem;background:#020617;padding:6px;border-radius:4px;max-height:90px;overflow-y:auto;}
+
+/* Tehdit İstihbaratı — AI'nin savaş açmadan önceki uyarı sinyalleri, dikkat çeksin */
+#threat-warnings-box{background:#241407;border-left:3px solid #f59e0b;padding:6px 8px;border-radius:4px;}
+
+/* Devam eden çıkarma sevkiyatları — "yolda" durumunu vurgula */
+#ongoing-ops-box{background:#0f1c2e;border-left:3px solid #38bdf8;padding:6px 8px;border-radius:4px;}
+
+/* Hükümet Krizi uyarı kutusu — kritik, titreşimli değil ama göze çarpsın */
+#gov-crisis-box{font-weight:bold;color:#ff9d9d;}
+
+/* AI doktrin göstergesi — henüz keşfedilmemişken soluk görünsün */
+#target-doctrine{color:#fff;}
+
+/* ================= YENİ BİLEŞENLER (3. tur: Pax Erenia esintili paket) ================= */
+
+/* YENİ ülke seçim ekranı — kart ızgarası yerine dropdown + önizleme +
+   büyük başlat butonu (referans: Pax Erenia tarzı seçim ekranı). */
+#country-picker-box{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:8px;padding:22px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;}
+#country-dropdown{font-size:1rem;padding:10px;}
+#country-preview{font-size:.8rem;color:var(--muted);background:#020617;padding:10px;border-radius:4px;min-height:60px;line-height:1.6;}
+#country-preview b{color:#fff;}
+#btn-start-sim{background:linear-gradient(135deg,var(--accent),#1d7a85);font-size:1rem;padding:14px;margin-top:4px;}
+
+/* Harita yakınlaştırma kontrolleri — sağ altta küçük buton grubu */
+#map-zoom-controls{position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:15;}
+#map-zoom-controls button{width:34px;height:34px;padding:0;background:rgba(13,20,32,.85);border:1px solid var(--line);font-size:.9rem;}
+
+/* Yasalar & Politikalar — her yasa bir satır (açıklama + aç/kapa butonu) */
+.law-row{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#0a121e;padding:8px;border-radius:4px;border:1px solid var(--line);}
+.btn-law{background:#0d6e63;border-color:#12968a;padding:7px 10px;font-size:.68rem;flex-shrink:0;}
+.btn-law.active{background:var(--danger);border-color:#e05555;}
+
+/* Tur Sonu Raporu — BM paneliyle aynı modal mimarisi, farklı vurgu rengi */
+#turn-report-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:520px; max-height:80vh;
+  z-index:600; display:none;
+}
+#turn-report-panel.open{display:flex;}
+#turn-report-panel h2{color:var(--gold);}
 
 /* ================= MOBİL (≤899px) ================= */
 @media (max-width: 899px){

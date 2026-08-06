@@ -38,10 +38,18 @@ const WEAPON_CONFIG = {
   ballistic_medium: {range:5000,  dmg:24,  cost:45000,  turns:2, label:"Balistik Füze (Orta)"},
   ballistic_icbm:   {range:12000, dmg:30,  cost:110000, turns:4, requiresTech:"icbm", label:"Kıtalararası Füze"},
   tank:             {cost:40000,  turns:2, label:"Tank", noAttack:true},
-  kara_birligi:     {range:3000,  dmg:30,  cost:10000,  turns:1, manpowerCost:50000, label:"Piyade Tümeni"},
+  /* YENİ: capture:true — sadece bu üçü (kara/çıkarma/hava indirme) şehri
+     gerçekten ele geçirebilir. Aynı piyade tümeni envanterini kullanırlar,
+     sadece menzil/risk profilleri farklıdır. */
+  kara_birligi:     {range:3000,  dmg:30,  cost:10000,  turns:1, manpowerCost:50000, capture:true, label:"Kara Harekâtı"},
+  amphibious:       {range:20000, dmg:30,  capture:true, label:"Çıkarma Harekâtı"},
+  airborne:         {range:20000, dmg:25,  capture:true, label:"Hava İndirme Harekâtı"},
   frigate:          {cost:100000, turns:3, label:"Fırkateyn", noAttack:true},
   gen5_jet:         {range:3000,  dmg:25,  cost:150000, turns:3, label:"5. Nesil Uçak"},
-  nuke:             {range:12000, dmg:999, cost:500000, turns:5, requiresTech:"nuclear", requiresIcbm:true, uraniumCost:1, label:"Nükleer Başlık"}
+  /* YENİ: nuke artık "hp=999 -> anlık ilhak" yapmıyor — çok ağır hasar
+     verir ve direnişi sıfıra yakın düşürür ama şehri SADECE kara/çıkarma/
+     hava indirme harekâtı ele geçirebilir. */
+  nuke:             {range:12000, dmg:95,  cost:500000, turns:5, requiresTech:"nuclear", requiresIcbm:true, uraniumCost:1, label:"Nükleer Başlık"}
 };
 
 const RESEARCH_COSTS = {nuclear:120000, cyber:45000, radar:60000, hss_adv:70000, gen5_jet:90000, mrbm:80000, icbm:150000, air_refuel:100000};
@@ -58,6 +66,53 @@ function freshLayeredHSS(cap){
   return { short:{cap,current:cap}, medium:{cap,current:cap}, long:{cap,current:cap} };
 }
 
+/* YENİ: Hedefe ulaşabilecek partiler arasından en "ekonomik" (en dar/yeterli
+   menzilli) olanı seçer — 13.000km'lik nadir bir parti varsa onu sadece
+   gerçekten gerektiğinde kullanır, günlük atışlarda 12.000km'lik standart
+   partiyi tüketir. applyRangeMult=false ile çağrılırsa (çıkarma/hava indirme
+   harekâtı gibi sabit menzilli silahlar için) menzil kontrolü çarpansız
+   yapılır, sadece hasar profili için parti seçilir. */
+function pickBestBatch(item, requiredRange, applyRangeMult=true, fixedRangeOverride=null){
+  let cfg = WEAPON_CONFIG[item];
+  let baseRange = fixedRangeOverride!==null ? fixedRangeOverride : cfg.range;
+  let batches = (state.player.batches[item] || []).filter(b=>b.qty>0);
+  if(batches.length===0) return {batch:null, reason:'empty'};
+  let effRangeOf = b => applyRangeMult ? baseRange*(b.rangeMult||1) : baseRange;
+  let reach = batches.filter(b => effRangeOf(b) >= requiredRange);
+  if(reach.length===0){
+    let maxRange = Math.max(...batches.map(effRangeOf));
+    return {batch:null, reason:'range', maxRange};
+  }
+  reach.sort((a,b)=> effRangeOf(a)-effRangeOf(b));
+  return {batch:reach[0], reason:'ok', effRange:effRangeOf(reach[0])};
+}
+
+/* YENİ: Yönetim Biçimi — devrimle değiştirilebilir, her biri farklı
+   ekonomi/üretim/Ar-Ge/savaş-yorgunluğu dengesi sunar. */
+const IDEOLOGY_CONFIG = {
+  democracy:   {label:"Demokrasi",  incomeMult:1.20, prodCostMult:1.0, researchMult:1.0,  warSupportPenaltyMult:1.3},
+  autocracy:   {label:"Otokrasi",   incomeMult:0.95, prodCostMult:0.7, researchMult:1.0,  warSupportPenaltyMult:0.8},
+  technocracy: {label:"Teknokrasi", incomeMult:1.0,  prodCostMult:1.0, researchMult:0.65, warSupportPenaltyMult:1.0}
+};
+/* YENİ: Yasalar — bağımsız açılıp kapatılabilir, kalıcı etkiler. */
+const LAW_LABELS = {martial:"Sıkıyönetim", draft:"Zorunlu Askerlik", openborders:"Açık Sınırlar"};
+
+/* YENİ: AI ülke doktrinleri — her AI artık aynı davranmıyor. Saldırgan
+   düşük ilişkide çabuk savaşa girer, izolasyonist neredeyse hiç girmez,
+   intikamcı sadece geçmişte kendisine saldırılmışsa (warTurns>0 olmuşsa)
+   agresifleşir. Deterministik atanır (ülke id'sine göre) — aynı ülke her
+   oyunda aynı doktrine sahip olur, bu da AI'yi "tanınabilir" kılar. */
+const DOCTRINES = {
+  aggressive:   {label:"Saldırgan",     warThreshold:25, warChance:0.10},
+  isolationist: {label:"İzolasyonist",  warThreshold:-999, warChance:0.004},
+  vengeful:     {label:"İntikamcı",     warThreshold:35, warChance:0.06}
+};
+function assignDoctrine(id){
+  let sum = id.split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+  let keys = Object.keys(DOCTRINES);
+  return keys[sum % keys.length];
+}
+
 function buildInitialState(playerId){
   let stats = STARTING_STATS[playerId];
   let countries = {};
@@ -68,10 +123,10 @@ function buildInitialState(playerId){
     countries[id] = {
       name:g.name, color:g.color, isBloc:false, canDeclareWar:true,
       relation, stability:START_STABILITY[id],
-      casusBelli:false, embargo:false, armsEmbargo:false, freeTrade:false, defensePact:false,
-      alliedWithPlayer:id===playerId, scouted:false,
+      casusBelli:false, embargo:false, armsEmbargo:false, freeTrade:false, defensePact:false, airspaceBanned:false,
+      alliedWithPlayer:id===playerId, scouted:false, doctrine:assignDoctrine(id), warBuildup:0,
       eliminated:false, warTurns:0, blockaded:0, radarJammed:0,
-      cities: g.cities.map(c => ({ name:c.name, lat:c.lat, lon:c.lon, hp:100, owner:id, hss:freshLayeredHSS(c.hssCap) }))
+      cities: g.cities.map(c => ({ name:c.name, lat:c.lat, lon:c.lon, hp:100, resistance:100, owner:id, hss:freshLayeredHSS(c.hssCap) }))
     };
   }
   /* YENİ: 6 kıta bloğu — orta seviye güçte, savaş açamaz/gelişemez ama
@@ -86,19 +141,32 @@ function buildInitialState(playerId){
       casusBelli:false, embargo:false, armsEmbargo:false, freeTrade:false, defensePact:false,
       alliedWithPlayer:false, scouted:false,
       eliminated:false, warTurns:0, blockaded:0, radarJammed:0,
-      cities: b.cities.map(c => ({ name:c.name, lat:c.lat, lon:c.lon, hp:100, owner:id, hss:freshLayeredHSS(c.hssCap) }))
+      cities: b.cities.map(c => ({ name:c.name, lat:c.lat, lon:c.lon, hp:100, resistance:100, owner:id, hss:freshLayeredHSS(c.hssCap) }))
     };
   }
 
   let inventory = {}; for(let k in BASE_INVENTORY) inventory[k] = Math.round(BASE_INVENTORY[k]*stats.invMult);
+  /* YENİ: Parti (batch) bazlı envanter — customLoadout'un yerini alıyor.
+     Her silah tipi artık {qty, rangeMult, dmgMult} partilerinden oluşan bir
+     dizi tutuyor. Böylece "3 tane 12.000km'lik ICBM + 1 tane 13.000km'lik
+     ICBM" gibi karışık envanterler GERÇEKTEN ayrı ayrı takip edilebiliyor —
+     ATEŞLE'ye basınca sistem hedefe yetecek en ekonomik partiyi otomatik
+     seçiyor (bkz. pickBestBatch()). Sadece menzilli/özelleştirilebilir
+     silahlar (nuke/tank/frigate hariç) parti tutuyor. */
+  let batches = {};
+  for(let k of ["drone_swarm","ballistic_short","ballistic_medium","ballistic_icbm","kara_birligi","gen5_jet"]){
+    batches[k] = inventory[k]>0 ? [{qty:inventory[k], rangeMult:1, dmgMult:1}] : [];
+  }
   return {
     turn:1, globalTension:0, playerID:playerId, selectedID: Object.keys(GEO_DATA).find(id=>id!==playerId),
     gameOver:false, sanctionRemaining:0,
-    taxRate:30, refugeeLevel:0, unResolutions:[], unNukeCap:5,
+    taxRate:30, refugeeLevel:0, unResolutions:[], unNukeCap:5, govCrisisTurns:0,
+    // YENİ: Yönetim biçimi ve yasalar
     player:{
       budget:stats.budget, manpower:stats.manpower, stability:100, publicSupport:100, uranium:stats.uranium,
       tech:{nuclear:!!stats.nuclear, cyber:false, radar:false, gen5_jet:false, hss_adv:false, mrbm:false, icbm:false, air_refuel:false},
-      inventory, customLoadout:{}, productionQueue:[]
+      inventory, batches, productionQueue:[], researchQueue:[], pendingOps:[],
+      ideology:"democracy", laws:{martial:false, draft:false, openborders:false}
     },
     countries
   };
@@ -155,12 +223,16 @@ const saveSystem = {
 /* ---- BM Güvenlik Konseyi yardımcıları ---- */
 function resolveUNVote(targetId){
   let player = state.playerID;
-  let voters = Object.keys(state.countries).filter(id=>id!==player && id!==targetId && !state.countries[id].eliminated);
+  // YENİ: hedef ülke artık oylamadan tamamen hariç tutulmuyor — kendi
+  // aleyhine oy kullanır (ret) ve eğer P5 üyesiyse (ABD/Rusya/Çin/İngiltere/
+  // Fransa) gerçek BM kuralları gibi kendine karşı kararı OTOMATİK veto eder.
+  let voters = Object.keys(state.countries).filter(id=>id!==player && !state.countries[id].eliminated);
   let votesFor=0, votesAgainst=0, vetoers=[];
   voters.forEach(id=>{
     let c = state.countries[id];
-    if(c.relation>=50) votesFor++; else votesAgainst++;
-    if(P5_MEMBERS.includes(id) && c.relation<40) vetoers.push(c.name);
+    let isTarget = id===targetId;
+    if(isTarget || c.relation<50) votesAgainst++; else votesFor++;
+    if(P5_MEMBERS.includes(id) && (isTarget || c.relation<40)) vetoers.push(c.name);
   });
   let status = vetoers.length>0 ? 'vetoed' : (votesFor>votesAgainst ? 'passed' : 'failed');
   return {votesFor, votesAgainst, vetoers, status};
@@ -175,24 +247,29 @@ function applyResolutionEffect(targetId, type){
 }
 
 const ui = {
+  /* YENİ: Kart ızgarası yerine tek dropdown + canlı önizleme (Pax Erenia
+     tarzı seçim ekranı referansı). */
   renderCountrySelect(){
-    let box = document.getElementById("country-cards");
-    box.innerHTML = "";
+    let sel = document.getElementById("country-dropdown");
+    if(!sel) return;
+    sel.innerHTML = "";
     for(let id in GEO_DATA){
-      let g = GEO_DATA[id];
-      let s = STARTING_STATS[id];
-      let card = document.createElement("div");
-      card.className = "country-card";
-      card.innerHTML = `
-        <div style="font-size:2.2rem;">${FLAGS[id]}</div>
-        <h3 style="border:none;padding:0;margin:6px 0;color:#fff;font-size:1rem;">${g.name}</h3>
-        <div class="small-note">Güç Kademesi: Tier ${s.tier}${s.nuclear?" · ☢️ Nükleer":""}</div>
-        <div class="small-note">Şehirler: ${g.cities.map(c=>c.name).join(", ")}</div>
-        <div class="small-note" style="margin-top:6px;">💰 ${s.budget.toLocaleString()}$ · 👥 ${s.manpower.toLocaleString()} · ☢️ ${s.uranium} Uranyum</div>
-      `;
-      card.onclick = () => engine.startGame(id);
-      box.appendChild(card);
+      let opt = document.createElement("option");
+      opt.value = id; opt.innerText = `${FLAGS[id]} ${GEO_DATA[id].name}`;
+      sel.appendChild(opt);
     }
+    this.updateCountryPreview();
+  },
+  updateCountryPreview(){
+    let sel = document.getElementById("country-dropdown");
+    if(!sel) return;
+    let id = sel.value; let g = GEO_DATA[id]; let s = STARTING_STATS[id];
+    if(!g || !s) return;
+    setEl("country-preview", `
+      Güç Kademesi: <b>Tier ${s.tier}${s.nuclear?" · ☢️ Nükleer":""}</b><br>
+      Şehirler: ${g.cities.map(c=>c.name).join(", ")}<br>
+      💰 <b>${s.budget.toLocaleString()}$</b> · 👥 <b>${s.manpower.toLocaleString()}</b> · ☢️ <b>${s.uranium}</b> Uranyum
+    `, true);
   },
 
   init(){
@@ -220,6 +297,48 @@ const ui = {
       if(which==="un"){ unPanel.classList.add("open"); document.body.classList.add("un-open"); this.updateUNPanel(); }
       else { unPanel.classList.remove("open"); document.body.classList.remove("un-open"); }
     }
+  },
+
+  /* YENİ: BM panelini açık bir butonla kapatma — önceden sadece sekme
+     değiştirerek kapanıyordu, kullanıcı için belli değildi. */
+  closeUNPanel(){
+    let unPanel = document.getElementById("un-panel");
+    if(unPanel) unPanel.classList.remove("open");
+    document.body.classList.remove("un-open");
+    document.getElementById("tab-left").classList.add("active");
+    let tabUn = document.getElementById("tab-un"); if(tabUn) tabUn.classList.remove("active");
+    document.getElementById("left-panel").classList.add("mobile-active");
+    document.getElementById("right-panel").classList.remove("mobile-active");
+  },
+
+  /* YENİ: Harita yakınlaştırma — SVG/canvas'a AYNI CSS transform uygulanır,
+     bu yüzden mapToScreen()'in kurduğu piksel-hassas hizalama bozulmaz
+     (ikisi de aynı ölçekle büyür/küçülür). */
+  mapZoom: 1,
+  zoomMap(factor){
+    this.mapZoom = Math.max(1, Math.min(4, this.mapZoom*factor));
+    this._applyMapZoom();
+  },
+  resetMapZoom(){ this.mapZoom = 1; this._applyMapZoom(); },
+  _applyMapZoom(){
+    let t = `scale(${this.mapZoom})`;
+    let svg = document.getElementById("game-map"); if(svg) svg.style.transform = t;
+    let cv = document.getElementById("animCanvas"); if(cv) cv.style.transform = t;
+  },
+
+  /* YENİ: Tur Sonu Raporu — mevcut log akışından o turda üretilen satırları
+     dilimleyip ayrı bir modalda gösterir (yeni bir loglama sistemi kurmaya
+     gerek yok, zaten var olan logLines'tan besleniyor). */
+  showTurnReport(entries, turnNo){
+    setEl("turn-report-year", "Tur " + turnNo);
+    setEl("turn-report-body", entries.length ? entries.join("") : "<div>Bu tur önemli bir olay yaşanmadı.</div>", true);
+    let panel = document.getElementById("turn-report-panel");
+    if(panel){ panel.classList.add("open"); document.body.classList.add("un-open"); }
+  },
+  closeTurnReport(){
+    let panel = document.getElementById("turn-report-panel");
+    if(panel) panel.classList.remove("open");
+    document.body.classList.remove("un-open");
   },
 
   buildMap(){
@@ -300,21 +419,71 @@ const ui = {
       else refBox.style.display="none";
     }
 
-    let invHTML=""; for(let k in p.inventory) invHTML+=`<div style="margin:3px 0;background:#152234;padding:4px;border-radius:3px;">${(WEAPON_CONFIG[k]?WEAPON_CONFIG[k].label:k).toUpperCase()}: <b>${p.inventory[k]}</b></div>`;
+    // YENİ: Hükümet Krizi uyarı kutusu
+    let govBox = document.getElementById("gov-crisis-box");
+    if(govBox){
+      if((state.govCrisisTurns||0)>0){ govBox.style.display="block"; setEl("val-gov-crisis", `${4-state.govCrisisTurns} tur kaldı`); }
+      else govBox.style.display="none";
+    }
+
+    // YENİ: Yönetim biçimi + Yasalar göstergesi
+    setEl("current-ideology", IDEOLOGY_CONFIG[p.ideology].label);
+    let ideoSel = document.getElementById("ideology-select"); if(ideoSel) ideoSel.value = p.ideology;
+    for(let key of ["martial","draft","openborders"]){
+      let btn = document.getElementById("law-btn-"+key);
+      if(btn){ btn.classList.toggle("active", p.laws[key]); btn.innerText = p.laws[key] ? "İPTAL ET" : "YASALAŞTIR"; }
+    }
+
+    // YENİ: Ar-Ge kuyruğu göstergesi
+    let rqHTML = p.researchQueue.length===0 ? "Aktif Ar-Ge yok" : p.researchQueue.map(q=>`${q.item.toUpperCase()} — ${q.turnsLeft} tur kaldı`).join("<br>");
+    setEl("research-queue-box", rqHTML, true);
+
+    // YENİ: Devam eden çıkarma sevkiyatları göstergesi
+    let opsBox = document.getElementById("ongoing-ops-box");
+    if(opsBox){
+      if(p.pendingOps.length===0){ opsBox.style.display="none"; }
+      else {
+        opsBox.style.display="block";
+        opsBox.innerHTML = p.pendingOps.map(op=>{
+          let tc = state.countries[op.targetCountryId]; let city = tc?tc.cities[op.targetCityIdx]:null;
+          return `🚢 ${city?city.name:"?"} — ${op.turnsLeft} tur sonra sahile ulaşacak`;
+        }).join("<br>");
+      }
+    }
+
+    // YENİ: Tehdit İstihbaratı — AI'nin savaş açmadan önceki uyarı sinyalleri
+    let threats = Object.keys(state.countries).filter(id=>state.countries[id].warBuildup>0);
+    setEl("threat-warnings-box", threats.length===0 ? "Bilinen bir tehdit yok." :
+      threats.map(id=>`⚠️ ${state.countries[id].name}: ${state.countries[id].warBuildup} tur içinde saldırabilir`).join("<br>"), true);
+
+    // YENİ: Envanter artık parti (batch) kırılımını da gösteriyor
+    let invHTML=""; for(let k in p.inventory){
+      let label = (WEAPON_CONFIG[k]?WEAPON_CONFIG[k].label:k).toUpperCase();
+      let bList = p.batches[k];
+      let breakdown = "";
+      if(bList && bList.length>1){
+        breakdown = " ("+bList.filter(b=>b.qty>0).map(b=>{
+          let cfg=WEAPON_CONFIG[k];
+          let r = cfg.range!==undefined ? Math.round(cfg.range*(b.rangeMult||1)) : null;
+          return `${b.qty}x${r?" "+r.toLocaleString()+"km":""}`;
+        }).join(", ")+")";
+      }
+      invHTML+=`<div style="margin:3px 0;background:#152234;padding:4px;border-radius:3px;">${label}: <b>${p.inventory[k]}</b>${breakdown}</div>`;
+    }
     setEl("inventory-list",invHTML,true);
 
     let qHTML = p.productionQueue.length===0?"Aktif üretim yok":p.productionQueue.map(q=>`[${(WEAPON_CONFIG[q.item]?WEAPON_CONFIG[q.item].label:q.item).toUpperCase()}] T${q.tier} — ${q.turnsLeft} tur kaldı`).join("<br>");
     setEl("queue-box",qHTML,true);
 
     setEl("tech-status", "Sahip: "+(Object.keys(p.tech).filter(k=>p.tech[k]).join(", ")||"Henüz yok"));
-    document.getElementById("btn-nuclear").disabled = p.tech.nuclear;
-    document.getElementById("btn-cyber").disabled = p.tech.cyber;
-    document.getElementById("btn-radar").disabled = p.tech.radar;
-    document.getElementById("btn-hss").disabled = p.tech.hss_adv;
-    document.getElementById("btn-jet").disabled = p.tech.gen5_jet;
-    let btnMrbm=document.getElementById("btn-mrbm"); if(btnMrbm) btnMrbm.disabled = p.tech.mrbm;
-    let btnIcbm=document.getElementById("btn-icbm"); if(btnIcbm) btnIcbm.disabled = p.tech.icbm || !p.tech.mrbm;
-    let btnRefuel=document.getElementById("btn-refuel"); if(btnRefuel) btnRefuel.disabled = p.tech.air_refuel;
+    document.getElementById("btn-nuclear").disabled = p.tech.nuclear || p.researchQueue.some(q=>q.item==='nuclear');
+    document.getElementById("btn-cyber").disabled = p.tech.cyber || p.researchQueue.some(q=>q.item==='cyber');
+    document.getElementById("btn-radar").disabled = p.tech.radar || p.researchQueue.some(q=>q.item==='radar');
+    document.getElementById("btn-hss").disabled = p.tech.hss_adv || p.researchQueue.some(q=>q.item==='hss_adv');
+    document.getElementById("btn-jet").disabled = p.tech.gen5_jet || p.researchQueue.some(q=>q.item==='gen5_jet');
+    let btnMrbm=document.getElementById("btn-mrbm"); if(btnMrbm) btnMrbm.disabled = p.tech.mrbm || p.researchQueue.some(q=>q.item==='mrbm');
+    let btnIcbm=document.getElementById("btn-icbm"); if(btnIcbm) btnIcbm.disabled = p.tech.icbm || !p.tech.mrbm || p.researchQueue.some(q=>q.item==='icbm');
+    let btnRefuel=document.getElementById("btn-refuel"); if(btnRefuel) btnRefuel.disabled = p.tech.air_refuel || p.researchQueue.some(q=>q.item==='air_refuel');
 
     // Katmanlı hava savunması paneli
     let defSelect = document.getElementById("defense-city-select");
@@ -366,6 +535,11 @@ const ui = {
       setEl("recon-status", canSeeHSS ? `✅ İstihbarat mevcut — şehir savunma katmanları görünür.` : "🌫️ Bu ülke hakkında istihbaratınız yok — şehir savunma gücü bilinmiyor.");
       let hssTxt = canSeeHSS ? `Kısa:${city.hss.short.current}/${city.hss.short.cap} · Orta:${city.hss.medium.current}/${city.hss.medium.cap} · Uzun:${city.hss.long.current}/${city.hss.long.cap}` : "HSS: Bilinmiyor (🌫️ Fog of War)";
       setEl("target-city-info", tc.radarJammed>0 ? "📡 Radarları kör — savunmasız!" : hssTxt);
+      // YENİ: Direniş göstergesi — sadece ilhak eden harekâtların başarı
+      // şansını/kaybını etkiler, HSS gibi Fog of War'a tabi.
+      setEl("target-resistance-info", canSeeHSS ? `🛡️ Direniş: %${city.resistance} (düşük direniş = daha kolay/ucuz ilhak)` : "Direniş: Bilinmiyor (🌫️ Fog of War)");
+      // YENİ: AI doktrin göstergesi — Fog of War'a tabi, bloklarda yok
+      setEl("target-doctrine", (!tc.isBloc && canSeeHSS && tc.doctrine) ? DOCTRINES[tc.doctrine].label : "Bilinmiyor");
 
       // menzil bilgisi + özelleştirme + yakıt ikmali
       let weapon = document.getElementById("attack-weapon").value;
@@ -377,16 +551,31 @@ const ui = {
       let nearest = nearestOwnedCity(state.playerID, city);
       let rangeBox = document.getElementById("range-info");
       if(nearest && cfg && rangeBox){
-        let loadout = state.player.customLoadout[weapon];
-        let effRange = cfg.range!==undefined ? Math.round(cfg.range*((loadout&&loadout.rangeMult)||1)) : cfg.range;
         let d = Math.round(nearest.dist);
+        let isGroundFamily = (weapon==='kara_birligi'||weapon==='amphibious'||weapon==='airborne');
+        let invItem = isGroundFamily ? 'kara_birligi' : weapon;
+        let applyRangeMult = !(isGroundFamily && weapon!=='kara_birligi');
         if(useRefuelChecked && state.player.tech.air_refuel){
           rangeBox.className = "range-info";
           rangeBox.innerText = `${nearest.city.name} → ${city.name}: ${d} km · ⛽ Yakıt İkmali Aktif — Menzil Sınırsız`;
-        } else {
-          let ok = d <= effRange;
+        } else if(weapon==='nuke'){
+          let ok = d <= cfg.range;
           rangeBox.className = "range-info" + (ok?"":" range-bad");
-          rangeBox.innerText = `${nearest.city.name} → ${city.name}: ${d} km (Menzil: ${effRange} km) ${ok?"✔ Menzil dahilinde":"✘ MENZİL DIŞI"}`;
+          rangeBox.innerText = `${nearest.city.name} → ${city.name}: ${d} km (Menzil: ${cfg.range} km) ${ok?"✔ Menzil dahilinde":"✘ MENZİL DIŞI"}`;
+        } else {
+          // YENİ: Parti sistemi — envanterdeki en ekonomik/yeterli partiyi
+          // otomatik gösterir, ayrı bir "hangi füzeyi kullanacağım" seçimi yok.
+          let pick = pickBestBatch(invItem, weapon==='amphibious'?0:d, applyRangeMult, applyRangeMult ? null : cfg.range);
+          if(pick.batch){
+            rangeBox.className = "range-info";
+            rangeBox.innerText = `${nearest.city.name} → ${city.name}: ${d} km (Kullanılacak model: ${Math.round(pick.effRange).toLocaleString()} km) ✔ Menzil dahilinde`;
+          } else if(pick.reason==='empty'){
+            rangeBox.className = "range-info range-bad";
+            rangeBox.innerText = `Envanterde ${cfg.label.toUpperCase()} yok.`;
+          } else {
+            rangeBox.className = "range-info range-bad";
+            rangeBox.innerText = `${nearest.city.name} → ${city.name}: ${d} km — envanterinizdeki en uzun menzilli model ${Math.round(pick.maxRange).toLocaleString()} km ✘ MENZİL DIŞI`;
+          }
         }
       }
     }
@@ -437,6 +626,60 @@ const ui = {
   }
 };
 
+/* YENİ: Ar-Ge kuyruğu tamamlanınca çağrılır — teknolojiyi açar ve o
+   teknolojiye özel bonus/log mesajını uygular. */
+function applyResearchEffect(item){
+  state.player.tech[item] = true;
+  if(item==='hss_adv'){
+    state.countries[state.playerID].cities.forEach(c=>{ ['short','medium','long'].forEach(l=>{ c.hss[l].cap+=20; c.hss[l].current+=20; }); });
+    log("🛡️ HSS Modernizasyonu tamamlandı! Tüm şehirlerin katmanlı hava savunma kapasitesi arttı.","#00ff66");
+  } else if(item==='nuclear'){
+    log("☢️ Nükleer program tamamlandı! (Kıtalararası fırlatma için ayrıca ICBM teknolojisi gerekir)","#00ff66");
+  } else if(item==='cyber'){
+    log("💻 Siber İstihbarat Ağı aktif! Düşman şehirlerinin HSS durumunu ve teknoloji çalma imkânını kazandınız.","#00ff66");
+  } else if(item==='radar'){
+    log("📡 Gelişmiş Radar devrede! Gelen saldırıları %15 daha iyi tespit ediyorsunuz.","#00ff66");
+  } else if(item==='gen5_jet'){
+    log("✈️ Hava Üstünlüğü Doktrini kazanıldı! Uçak üretim maliyeti düştü, saldırı hasarı arttı.","#00ff66");
+  } else if(item==='mrbm'){
+    log("🛰️ Orta Menzil Roket Programı tamamlandı! Artık ICBM teknolojisi geliştirilebilir.","#00ff66");
+  } else if(item==='icbm'){
+    log("🚀 Kıtalararası Füze Programı tamamlandı! Artık ICBM üretebilir ve nükleer başlığı kıtalararası mesafeye taşıyabilirsiniz.","#00ff66");
+  } else if(item==='air_refuel'){
+    log("⛽ Havada Yakıt İkmali Programı tamamlandı! Uçaklarınız artık ek maliyet karşılığında sınırsız menzile ulaşabilir.","#00ff66");
+  }
+}
+
+/* YENİ: Kara/Çıkarma/Hava İndirme harekâtının ortak sonuç mantığı — hem
+   anlık harekâtlar (gameLoop çarpışma anı) hem de gecikmeli çıkarma
+   harekâtı (3 tur sonra nextTurn içinde) bunu çağırır. */
+function resolveGroundAssault(tgtCity, attackerID, cfg, sourceBatch){
+  let resistance = tgtCity.resistance;
+  let successChance = 0.35 + (1 - resistance/100) * 0.6; // %35 (direniş 100) - %95 (direniş 0)
+  let losses = Math.max(1, Math.round(1 + (resistance/100) * 2)); // 1-3 tümen
+  let success = Math.random() < successChance;
+  let isPlayerInvolved = (attackerID===state.playerID || tgtCity.owner===state.playerID);
+  if(attackerID===state.playerID){
+    state.player.inventory.kara_birligi = Math.max(0, state.player.inventory.kara_birligi - losses);
+    if(sourceBatch) sourceBatch.qty = Math.max(0, sourceBatch.qty - losses);
+    state.player.batches.kara_birligi = (state.player.batches.kara_birligi||[]).filter(b=>b.qty>0);
+  }
+  if(success){
+    let prevOwnerWasPlayer = tgtCity.owner===state.playerID;
+    tgtCity.owner = attackerID; tgtCity.hp = 60; tgtCity.resistance = 100;
+    ['short','medium','long'].forEach(l=>{ tgtCity.hss[l].current = Math.round(tgtCity.hss[l].cap*0.3); });
+    ui.buildMap();
+    if(attackerID===state.playerID){
+      log(`🏳️ ŞEHİR DÜŞTÜ: ${tgtCity.name} ${cfg.label.toUpperCase()} ile ele geçirildi! (${losses} tümen kaybı)`,"#00ff66");
+    } else if(prevOwnerWasPlayer){
+      log(`💀 ŞEHRİMİZ DÜŞTÜ: ${tgtCity.name}, ${state.countries[attackerID].name} tarafından ${cfg.label.toUpperCase()} ile ele geçirildi!`,"#ff3344");
+    }
+  } else if(isPlayerInvolved){
+    if(attackerID===state.playerID) log(`💀 HAREKÂT BAŞARISIZ: ${tgtCity.name} alınamadı, ${losses} tümen kaybedildi. (Direniş: %${resistance})`,"#ff3344");
+    else log(`🛡️ SAVUNMA BAŞARILI: ${state.countries[attackerID].name}'ın ${tgtCity.name}'e yönelik harekâtı püskürtüldü!`,"#3fb87f");
+  }
+}
+
 const engine = {
   startGame(countryId){
     state = buildInitialState(countryId);
@@ -445,6 +688,13 @@ const engine = {
     ui.init();
     setTimeout(resizeCanvas, 50);
     if(!animator.loopStarted){ animator.loopStarted=true; gameLoop(); }
+  },
+
+  /* YENİ: Yeni dropdown tabanlı seçim ekranından başlatma */
+  startGameFromDropdown(){
+    let sel = document.getElementById("country-dropdown");
+    if(!sel || !sel.value) return alert("Lütfen bir ülke seçin.");
+    this.startGame(sel.value);
   },
 
   loadCodeFromStart(){
@@ -516,31 +766,20 @@ const engine = {
     });
   },
 
+  /* YENİ: Ar-Ge artık anlık değil, kuyrukta birkaç tur bekliyor. Teknokrasi
+     ideolojisi süreyi kısaltır. Asıl bonus/log efektleri kuyruk tamamlanınca
+     applyResearchEffect() ile (nextTurn içinden) uygulanır. */
   research(item){
     const cost = RESEARCH_COSTS[item];
-    if(state.player.tech[item]) return;
-    if(item==='icbm' && !state.player.tech.mrbm) return log("Önce Orta Menzil Roket Programı geliştirilmeli!","red");
+    if(state.player.tech[item]) return log("Bu teknoloji zaten geliştirilmiş.","yellow");
+    if(state.player.researchQueue.find(q=>q.item===item)) return log("Bu teknoloji zaten Ar-Ge kuyruğunda.","yellow");
+    if(item==='icbm' && !state.player.tech.mrbm && !state.player.researchQueue.find(q=>q.item==='mrbm')) return log("Önce Orta Menzil Roket Programı geliştirilmeli!","red");
     if(state.player.budget < cost) return log("Ar-Ge için bütçe yetersiz!","red");
     state.player.budget -= cost;
-    state.player.tech[item] = true;
-    if(item==='hss_adv'){
-      state.countries[state.playerID].cities.forEach(c=>{ ['short','medium','long'].forEach(l=>{ c.hss[l].cap+=20; c.hss[l].current+=20; }); });
-      log("🛡️ HSS Modernizasyonu tamamlandı! Tüm şehirlerin katmanlı hava savunma kapasitesi arttı.","#00ff66");
-    } else if(item==='nuclear'){
-      log("☢️ Nükleer program tamamlandı! (Kıtalararası fırlatma için ayrıca ICBM teknolojisi gerekir)","#00ff66");
-    } else if(item==='cyber'){
-      log("💻 Siber İstihbarat Ağı aktif! Düşman şehirlerinin HSS durumunu ve teknoloji çalma imkânını kazandınız.","#00ff66");
-    } else if(item==='radar'){
-      log("📡 Gelişmiş Radar devrede! Gelen saldırıları %15 daha iyi tespit ediyorsunuz.","#00ff66");
-    } else if(item==='gen5_jet'){
-      log("✈️ Hava Üstünlüğü Doktrini kazanıldı! Uçak üretim maliyeti düştü, saldırı hasarı arttı.","#00ff66");
-    } else if(item==='mrbm'){
-      log("🛰️ Orta Menzil Roket Programı tamamlandı! Artık ICBM teknolojisi geliştirilebilir.","#00ff66");
-    } else if(item==='icbm'){
-      log("🚀 Kıtalararası Füze Programı tamamlandı! Artık ICBM üretebilir ve nükleer başlığı kıtalararası mesafeye taşıyabilirsiniz.","#00ff66");
-    } else if(item==='air_refuel'){
-      log("⛽ Havada Yakıt İkmali Programı tamamlandı! Uçaklarınız artık ek maliyet karşılığında sınırsız menzile ulaşabilir.","#00ff66");
-    }
+    const BASE_RESEARCH_TURNS = {nuclear:6, cyber:2, radar:2, hss_adv:3, gen5_jet:4, mrbm:3, icbm:5, air_refuel:3};
+    let turns = Math.max(1, Math.round((BASE_RESEARCH_TURNS[item]||3) * IDEOLOGY_CONFIG[state.player.ideology].researchMult));
+    state.player.researchQueue.push({item, turnsLeft:turns});
+    log(`🔬 Ar-Ge başladı: ${item.toUpperCase()} — ${turns} tur sürecek.`,"#00ccff");
     ui.updateAll();
   },
 
@@ -576,6 +815,8 @@ const engine = {
     if(!cfg) return;
     let cost=cfg.cost*tier;
     if(item==='gen5_jet' && state.player.tech.gen5_jet) cost = Math.round(cost*0.8);
+    // YENİ: Yönetim biçimi + Sıkıyönetim üretim maliyetini etkiler
+    cost = Math.round(cost * IDEOLOGY_CONFIG[state.player.ideology].prodCostMult * (state.player.laws.martial?0.5:1));
     let turns=cfg.turns*tier;
 
     let customizable = cfg.range!==undefined && item!=='nuke';
@@ -589,7 +830,15 @@ const engine = {
     let extra = cfg.uraniumCost ? ` + ${cfg.uraniumCost} Uranyum` : (cfg.manpowerCost ? ` + ${cfg.manpowerCost.toLocaleString()} Nüfus`:"");
     let reqTxt = cfg.requiresTech && !state.player.tech[cfg.requiresTech] ? ` ⚠️ ${cfg.requiresTech.toUpperCase()} teknolojisi gerekli` : "";
     let icbmTxt = cfg.requiresIcbm && !state.player.tech.icbm ? " ⚠️ ICBM teknolojisi gerekli" : "";
-    setEl("prod-info", `Süre: ${turns} tur · Maliyet: ${cost.toLocaleString()}$${extra}${reqTxt}${icbmTxt}`);
+    let statsTxt = "";
+    if(customizable){
+      let rangePct = parseInt(document.getElementById("custom-range").value)||34;
+      let dmgPct = parseInt(document.getElementById("custom-dmg").value)||33;
+      let rangeMult = 0.7 + (rangePct/100)*0.6;
+      let dmgMult = 0.7 + (dmgPct/100)*0.6;
+      statsTxt = ` · Sonuç: Menzil ${Math.round(cfg.range*rangeMult).toLocaleString()}km (baz ${cfg.range.toLocaleString()}km), Hasar ${Math.round(cfg.dmg*dmgMult)} (baz ${cfg.dmg})`;
+    }
+    setEl("prod-info", `Süre: ${turns} tur · Maliyet: ${cost.toLocaleString()}$${extra}${reqTxt}${icbmTxt}${statsTxt}`);
   },
 
   startProduction(){
@@ -599,6 +848,7 @@ const engine = {
     if(!cfg) return log("Geçerli bir ürün seçilmedi.","red");
     let cost=cfg.cost*tier;
     if(item==='gen5_jet' && state.player.tech.gen5_jet) cost = Math.round(cost*0.8);
+    cost = Math.round(cost * IDEOLOGY_CONFIG[state.player.ideology].prodCostMult * (state.player.laws.martial?0.5:1));
     let turns=cfg.turns*tier;
 
     let customizable = cfg.range!==undefined && item!=='nuke';
@@ -762,6 +1012,58 @@ const engine = {
         log(`🎯 Casusluk operasyonu başarısız oldu, ajan yakalandı! İlişkiler sert düştü (-20) ve para boşa gitti.`,"red");
       }
     }
+    /* YENİ: Barış müzakeresi — savaş halindeki bir ülkeye şartlı teklif.
+       Kabul şansı hedefin istikrarına ve savaşın uzunluğuna bağlı, tazminat/
+       şehir iadesi bu şansı artırır. */
+    else if(action==='peace_offer_neutral' || action==='peace_offer_reparations' || action==='peace_offer_cede'){
+      if(target.relation>0) return log("Barış teklifi için savaş halinde olmalısınız.","yellow");
+      let acceptChance = 0.3 + (1-target.stability/100)*0.4 + Math.min(0.2, target.warTurns*0.02);
+      let extra = "";
+      if(action==='peace_offer_reparations'){
+        let cost=60000;
+        if(p.budget<cost) return log(`Tazminat teklifi için ${cost.toLocaleString()}$ gerekli.`,"red");
+        p.budget -= cost; acceptChance += 0.3; extra = ` (${cost.toLocaleString()}$ tazminat ödendi)`;
+      } else if(action==='peace_offer_cede'){
+        let cededCity = target.cities.find(c=>c.owner===state.playerID);
+        if(!cededCity) return log(`${target.name}'den ele geçirilmiş bir şehriniz yok, iade edecek bir şey bulunmuyor.`,"yellow");
+        cededCity.owner = state.selectedID; cededCity.hp=70; cededCity.resistance=100;
+        acceptChance += 0.35; extra = ` (${cededCity.name} geri verildi)`;
+        ui.buildMap();
+      }
+      if(Math.random() < Math.min(0.95, acceptChance)){
+        target.relation = 40; target.warTurns = 0; target.casusBelli = false;
+        log(`🕊️ BARIŞ KABUL EDİLDİ: ${target.name} ile savaş sona erdi${extra}.`,"#3fb87f");
+      } else {
+        log(`🕊️ BARIŞ TEKLİFİ REDDEDİLDİ: ${target.name} savaşı sürdürmek istiyor${extra}.`,"#7d8fa3");
+      }
+    }
+    /* YENİ: Hava sahasını kapatma — bu ülkenin size yönelik saldırılarına
+       karşı radar/önleme şansınızı kalıcı olarak artırır. */
+    else if(action==='airspace_ban'){
+      target.airspaceBanned = !target.airspaceBanned;
+      if(target.airspaceBanned){ target.relation=Math.max(0,target.relation-5); log(`✈️🚫 ${target.name} için hava sahamız kapatıldı — bu ülkenin saldırılarına karşı önleme şansınız arttı.`,"#2b3a4a"); }
+      else log(`✈️ ${target.name} için hava sahası yeniden açıldı.`,"#00ff66");
+    }
+    ui.updateAll();
+  },
+
+  /* YENİ: Devrim — yönetim biçimini değiştirir, her ideoloji farklı
+     ekonomi/üretim/Ar-Ge/savaş-yorgunluğu dengesi sunar. */
+  doRevolution(){
+    let newId = document.getElementById("ideology-select").value;
+    if(newId===state.player.ideology) return log("Zaten bu yönetim biçimindesiniz.","yellow");
+    if(state.player.stability<25) return log("İstikrar çok düşükken devrim riskli, en az %25 istikrar gerekli.","red");
+    state.player.stability = Math.max(0, state.player.stability-20);
+    state.player.ideology = newId;
+    log(`🔻 DEVRİM: Yönetim biçimi "${IDEOLOGY_CONFIG[newId].label}" olarak değiştirildi! (İstikrar -20)`,"#a855f7");
+    ui.updateAll();
+  },
+
+  /* YENİ: Yasalar — bağımsız açılıp kapatılabilir, kalıcı ekonomi/üretim/
+     isyan riski etkileri var (bkz. nextTurn ve calcProdTime/startProduction). */
+  toggleLaw(key){
+    state.player.laws[key] = !state.player.laws[key];
+    log(`📜 ${LAW_LABELS[key]} ${state.player.laws[key] ? "YASALAŞTIRILDI" : "İPTAL EDİLDİ"}.`, state.player.laws[key] ? "#facc15" : "#7d8fa3");
     ui.updateAll();
   },
 
@@ -802,11 +1104,12 @@ const engine = {
 
     let cfg = WEAPON_CONFIG[type];
     if(!cfg) return log("Geçerli bir mühimmat seçilmedi.","red");
-    let loadout = state.player.customLoadout[type];
-    let effRange = cfg.range!==undefined ? cfg.range*((loadout&&loadout.rangeMult)||1) : cfg.range;
-    let effDmg = cfg.dmg!==undefined ? Math.round(cfg.dmg*((loadout&&loadout.dmgMult)||1)) : cfg.dmg;
+    let isGroundFamily = (type==='kara_birligi'||type==='amphibious'||type==='airborne');
+    let invItem = isGroundFamily ? 'kara_birligi' : type;
+    // YENİ: çıkarma/hava indirme sabit 20.000km menzilli — parti menzil
+    // çarpanı sadece klasik kara harekâtına uygulanır.
+    let applyRangeMult = !(isGroundFamily && type!=='kara_birligi');
 
-    // YENİ: Havada yakıt ikmali — sadece uçak, menzil sınırını kaldırır
     let refuelBox = document.getElementById("use-refuel");
     let useRefuel = type==='gen5_jet' && refuelBox && refuelBox.checked;
     if(useRefuel && !state.player.tech.air_refuel) return log("Yakıt ikmali için önce Havada Yakıt İkmali Programı geliştirilmeli!","red");
@@ -815,27 +1118,50 @@ const engine = {
 
     let nearest = nearestOwnedCity(state.playerID, targetCity);
     if(!nearest) return log("Saldırıyı fırlatacak sahip olduğunuz bir şehir kalmadı!","red");
-    if(!useRefuel && nearest.dist > effRange) return log(`MENZİL DIŞI: ${nearest.city.name} → ${targetCity.name} mesafesi ${Math.round(nearest.dist)} km, bu silahın menzili ${Math.round(effRange)} km.`,"red");
+    let requiredRange = nearest.dist;
 
+    let pick = { batch:null };
     if(type==='nuke'){
       if(!state.player.tech.icbm) return log("Nükleer başlığın bu mesafeye taşınabilmesi için ICBM teknolojisi gerekli!","red");
       if(state.player.inventory.nuke<1) return log("Envanterde nükleer başlık yok! Önce üretmelisiniz.","red");
+      if(!useRefuel && requiredRange>cfg.range) return log(`MENZİL DIŞI: ${nearest.city.name} → ${targetCity.name} mesafesi ${Math.round(requiredRange)} km, bu silahın menzili ${Math.round(cfg.range)} km.`,"red");
+    } else {
+      // YENİ: menzile göre parti otomatik seçimi — envanterde birden fazla
+      // menzil profili varsa (ör. 3x 12.000km + 1x 13.000km ICBM), sistem
+      // hedefe yetecek EN EKONOMİK partiyi kendisi seçer, ayrı bir "hangi
+      // füzeyi atacağım" ekranı yok.
+      pick = pickBestBatch(invItem, useRefuel ? 0 : requiredRange, applyRangeMult, applyRangeMult ? null : cfg.range);
+      if(pick.batch===null){
+        if(pick.reason==='empty') return log(`Envanterde ${cfg.label.toUpperCase()} kalmadı! Üretim yapmalısınız.`,"red");
+        return log(`MENZİL DIŞI: ${nearest.city.name} → ${targetCity.name} mesafesi ${Math.round(requiredRange)} km, envanterinizdeki en uzun menzilli model ${Math.round(pick.maxRange)} km.`,"red");
+      }
+    }
+
+    let effDmg = pick.batch ? Math.round(cfg.dmg*(pick.batch.dmgMult||1)) : cfg.dmg;
+
+    if(type==='nuke'){
       state.player.inventory.nuke--;
       applyInternationalReaction();
       state.player.stability = Math.max(0,state.player.stability-15);
-      log("☢️ NÜKLEER FIRLATMA! Global tansiyon kritik seviyeye ulaştı, dünya kınama mesajları yağdırıyor.","#ff3344");
-    } else if(type==='kara_birligi'){
-      if(state.player.inventory.kara_birligi<1) return log("Envanterde piyade tümeni yok!","red");
-      state.player.inventory.kara_birligi--;
-    } else {
-      if(!state.player.inventory[type] || state.player.inventory[type]<=0) return log(`Envanterde ${cfg.label.toUpperCase()} kalmadı! Üretim yapmalısınız.`,"red");
-      state.player.inventory[type]--;
+      log("☢️ NÜKLEER FIRLATMA! Global tansiyon kritik seviyeye ulaştı, dünya kınama mesajları yağdırıyor. (Şehri yok etmez, sadece ağır hasar verir — ilhak için kara/çıkarma/hava indirme harekâtı gerekir)","#ff3344");
     }
 
-    if(useRefuel){ state.player.budget-=REFUEL_COST; log(`⛽ Yakıt ikmali kullanıldı: ${nearest.city.name} → ${targetCity.name} (${Math.round(nearest.dist)} km, menzil sınırı yok).`,"#facc15"); }
+    if(useRefuel){ state.player.budget-=REFUEL_COST; log(`⛽ Yakıt ikmali kullanıldı: ${nearest.city.name} → ${targetCity.name} (${Math.round(requiredRange)} km, menzil sınırı yok).`,"#facc15"); }
 
-    log(`🚀 ${nearest.city.name}'den ${targetCity.name} hedefine ${cfg.label.toUpperCase()} sevk edildi! (${Math.round(nearest.dist)} km)`,"#ff3344");
-    animator.spawnAttack(nearest.city,targetCity,type,state.playerID,effDmg);
+    if(type==='amphibious'){
+      // YENİ: Çıkarma Harekâtı artık ANINDA değil — gemiler yola çıkar,
+      // 3 tur sonra sahile ulaşıp asıl çarpışma o zaman gerçekleşir.
+      // Emredildiği an başlar, bu süre içinde iptal edilemez.
+      state.player.pendingOps.push({type:'amphibious', targetCountryId:state.selectedID, targetCityIdx:parseInt(idx), turnsLeft:3, sourceBatch:pick.batch});
+      log(`🚢 ÇIKARMA HAREKÂTI BAŞLATILDI: Gemiler ${targetCity.name}'e doğru yola çıktı. 3 tur sonra sahile ulaşacaklar (bu süreçte iptal edilemez, deniz riski var).`,"#38bdf8");
+    } else {
+      if(type!=='nuke'){
+        if(!isGroundFamily){ pick.batch.qty--; state.player.inventory[type] = Math.max(0,state.player.inventory[type]-1); state.player.batches[type] = state.player.batches[type].filter(b=>b.qty>0); }
+        // isGroundFamily (kara_birligi/airborne): envanter düşümü ÇARPIŞMA ANINDA (gameLoop/resolveGroundAssault) yapılır
+      }
+      log(`🚀 ${nearest.city.name}'den ${targetCity.name} hedefine ${cfg.label.toUpperCase()} sevk edildi! (${Math.round(requiredRange)} km)`,"#ff3344");
+      animator.spawnAttack(nearest.city,targetCity,type,state.playerID,effDmg,pick.batch);
+    }
     ui.updateAll();
   },
 
@@ -843,8 +1169,9 @@ const engine = {
     if(state.gameOver) return;
     state.turn++;
     const p = state.player;
+    let logStartIdx = logLines.length; // YENİ: tur raporu için bu turun log aralığını işaretle
 
-    // ---- Ekonomi (vergi oranı + serbest ticaret + ambargo dahil) ----
+    // ---- Ekonomi (vergi oranı + serbest ticaret + ambargo + ideoloji/yasalar dahil) ----
     let income = 70000;
     for(let id in state.countries){
       let c = state.countries[id];
@@ -856,19 +1183,70 @@ const engine = {
     income = Math.round(income*taxMult);
     if(p.publicSupport<30) income = Math.round(income*0.85);
     if(state.sanctionRemaining>0) income = Math.round(income*0.7);
+    // YENİ: Yönetim biçimi ve yasaların ekonomiye etkisi
+    income = Math.round(income * IDEOLOGY_CONFIG[p.ideology].incomeMult);
+    if(p.laws.draft) income = Math.round(income*0.9);
+    if(p.laws.openborders) income = Math.round(income*1.1);
     let upkeep = Object.values(p.inventory).reduce((a,b)=>a+b,0)*80 + p.productionQueue.length*500;
     p.budget = Math.max(0, p.budget + income - upkeep);
 
     p.manpower += (p.publicSupport<30? 8000 : 15000);
+    // YENİ: Zorunlu Askerlik yasası her tur bedava piyade tümeni verir
+    if(p.laws.draft){
+      p.inventory.kara_birligi = (p.inventory.kara_birligi||0)+3;
+      if(p.batches.kara_birligi){
+        let base = p.batches.kara_birligi.find(b=>b.rangeMult===1 && b.dmgMult===1);
+        if(base) base.qty+=3; else p.batches.kara_birligi.push({qty:3,rangeMult:1,dmgMult:1});
+      }
+    }
 
     // Üretim kuyruğu
     for(let i=p.productionQueue.length-1;i>=0;i--){
       let q=p.productionQueue[i]; q.turnsLeft--;
       if(q.turnsLeft<=0){
         p.inventory[q.item]=(p.inventory[q.item]||0)+1;
-        if(q.custom) p.customLoadout[q.item] = q.custom;
+        // YENİ: parti (batch) sistemi — aynı profildeki partiler birleşir,
+        // farklı menzil/hasar profiline sahip olanlar ayrı takip edilir.
+        if(p.batches[q.item]){
+          let profile = q.custom || {rangeMult:1, dmgMult:1};
+          let existing = p.batches[q.item].find(b=>b.rangeMult===profile.rangeMult && b.dmgMult===profile.dmgMult);
+          if(existing) existing.qty++; else p.batches[q.item].push({qty:1, rangeMult:profile.rangeMult, dmgMult:profile.dmgMult});
+        }
         log(`✅ Üretim tamamlandı: ${WEAPON_CONFIG[q.item].label.toUpperCase()} envantere eklendi!`,"#00ff66");
         p.productionQueue.splice(i,1);
+      }
+    }
+
+    // YENİ: Ar-Ge kuyruğu
+    for(let i=p.researchQueue.length-1;i>=0;i--){
+      let q=p.researchQueue[i]; q.turnsLeft--;
+      if(q.turnsLeft<=0){
+        applyResearchEffect(q.item);
+        p.researchQueue.splice(i,1);
+      }
+    }
+
+    // YENİ: Devam eden çıkarma harekâtları (3 tur sevkiyat + yolda deniz riski)
+    for(let i=p.pendingOps.length-1;i>=0;i--){
+      let op=p.pendingOps[i]; op.turnsLeft--;
+      if(op.turnsLeft>0){
+        // Basitleştirilmiş deniz riski: hedef AI ekonomisi tam simüle
+        // edilmediğinden (fırkateyn sayısı takip edilmiyor), genel bir
+        // "yolda saldırıya uğrama" ihtimali uygulanıyor.
+        if(Math.random()<0.08){
+          let lost = Math.min(op.sourceBatch?op.sourceBatch.qty:0, 1) || 1;
+          if(op.sourceBatch) op.sourceBatch.qty = Math.max(0, op.sourceBatch.qty-lost);
+          p.inventory.kara_birligi = Math.max(0, p.inventory.kara_birligi-lost);
+          log(`🌊 DENİZ RİSKİ: Çıkarma konvoyu yolda saldırıya uğradı, ${lost} tümen kaybedildi.`,"#f59e0b");
+        }
+      } else {
+        let tgtCountry = state.countries[op.targetCountryId];
+        let tgtCity = tgtCountry.cities[op.targetCityIdx];
+        log(`🚢 Çıkarma filosu ${tgtCity.name} kıyılarına ulaştı, harekât başlıyor!`,"#38bdf8");
+        createExplosion(project(tgtCity.lat,tgtCity.lon).x, project(tgtCity.lat,tgtCity.lon).y, 'amphibious');
+        resolveGroundAssault(tgtCity, state.playerID, WEAPON_CONFIG.amphibious, op.sourceBatch);
+        p.batches.kara_birligi = (p.batches.kara_birligi||[]).filter(b=>b.qty>0);
+        p.pendingOps.splice(i,1);
       }
     }
 
@@ -880,6 +1258,10 @@ const engine = {
         ['short','medium','long'].forEach(l=>{
           if(city.hss[l].current<city.hss[l].cap) city.hss[l].current = Math.min(city.hss[l].cap, city.hss[l].current + Math.ceil(city.hss[l].cap*0.15));
         });
+        // YENİ: HP ve Direniş zamanla yavaşça toparlanır — bombaladıktan
+        // sonra beklersen hedef yeniden güçlenir, ilhak için hız önemli.
+        city.hp = Math.min(100, city.hp + 3);
+        city.resistance = Math.min(100, city.resistance + 4);
       });
       if(c.radarJammed>0) c.radarJammed--;
       if(c.blockaded>0){ c.blockaded--; c.stability = Math.max(10, c.stability-3); }
@@ -949,7 +1331,10 @@ const engine = {
         let targetCity = playerCities[Math.floor(Math.random()*playerCities.length)];
         let source = nearestOwnedCity(id, targetCity);
         if(!source) continue;
-        let options = ['ballistic_medium','kara_birligi'].filter(t => source.dist <= WEAPON_CONFIG[t].range);
+        // YENİ: 'amphibious' menzili 20.000km olduğundan her zaman havuzda —
+        // AI da artık uzaktaki oyuncu şehirlerini gerçekten ilhak edebilir
+        // (yoksa okyanus ötesi şehirler AI için sonsuza dek dokunulmaz kalırdı).
+        let options = ['ballistic_medium','kara_birligi','amphibious'].filter(t => source.dist <= WEAPON_CONFIG[t].range);
         if(enemy.armsEmbargo) options = options.filter(t=>t!=='ballistic_medium'); // silah ambargosu gelişmiş mühimmatı kesti
         if(options.length===0) continue;
         let attackType = options[Math.floor(Math.random()*options.length)];
@@ -960,10 +1345,28 @@ const engine = {
         enemy.relation=30;
         log(`🕊️ BARIŞ TEKLİFİ: ${enemy.name} ağır kayıplar sonrası savaşı sonlandırmak istiyor! İlişkiler düzeldi.`,"#38bdf8");
       }
+      // YENİ: AI artık size de savaş açabilir — ama önce bir "tehdit"
+      // (uyarı) aşaması var, doğrudan sürpriz saldırı yapılmıyor. Doktrine
+      // göre eşik/olasılık farklı (saldırgan çok daha hazırlıksız savaşa
+      // girer, izolasyonist neredeyse hiç girmez).
+      if(!enemy.isBloc && enemy.relation>0 && !enemy.eliminated){
+        let doc = DOCTRINES[enemy.doctrine];
+        if(!enemy.warBuildup && enemy.relation < doc.warThreshold && Math.random() < doc.warChance){
+          enemy.warBuildup = 3;
+          log(`⚠️ TEHDİT İSTİHBARATI: ${enemy.name} (${doc.label} doktrini) sınır bölgelerinde asker yığıyor!`,"#f59e0b");
+        } else if(enemy.warBuildup>0){
+          enemy.warBuildup--;
+          if(enemy.warBuildup<=0){
+            enemy.relation = 0; enemy.warTurns = 0;
+            log(`⚔️ SAVAŞ İLANI: ${enemy.name} size savaş açtı!`,"#ff3344");
+          }
+        }
+      }
     }
 
-    // İç isyan riski
-    if(p.stability<25 && Math.random()<0.2){
+    // İç isyan riski — Sıkıyönetim riski artırır, Açık Sınırlar azaltır
+    let revoltChance = 0.2 + (p.laws.martial?0.08:0) - (p.laws.openborders?0.05:0);
+    if(p.stability<25 && Math.random()<Math.max(0.02,revoltChance)){
       let cities = getPlayerCities();
       if(cities.length>0){
         let c = cities[Math.floor(Math.random()*cities.length)];
@@ -987,6 +1390,18 @@ const engine = {
       log(`☢️ BM NÜKLEER DENETİM İHLALİ: Nükleer başlık sayınız (${p.inventory.nuke}) BM sınırını (${state.unNukeCap}) aştı! 6 tur yaptırım başladı.`,"#ef4444");
     }
 
+    // YENİ: Hükümet Krizi — ani çöküş yerine önceden gerilim biriktiren
+    // aşamalı bir uyarı. Halk desteği kritik seviyede kaldığı sürece sayaç
+    // artar; toparlanırsan sıfırlanır. Sayaç 4'e ulaşınca hükümet gerçekten
+    // düşer.
+    if(p.publicSupport<15){
+      state.govCrisisTurns = (state.govCrisisTurns||0)+1;
+      if(state.govCrisisTurns===1) log("⚠️ HÜKÜMET KRİZİ: Halk desteği kritik seviyede! Meclis güvenoyu istiyor — birkaç tur içinde toparlanmazsanız hükümet düşecek.","#ff3344");
+    } else {
+      if((state.govCrisisTurns||0)>0) log("✅ Hükümet krizi atlatıldı, halk desteği toparlandı.","#3fb87f");
+      state.govCrisisTurns = 0;
+    }
+
     advancedSystem.checkEvents();
 
     // Kazanma / kaybetme koşulları
@@ -994,10 +1409,13 @@ const engine = {
     let totalCities=0; for(let id in state.countries) totalCities += state.countries[id].cities.length;
     if(ownedByPlayer===0){ ui.gameOver("🏳️ YENİLGİ","Tüm şehirleriniz düştü. Ülkeniz savunmasını kaybetti."); return; }
     if(p.stability<=0){ ui.gameOver("💥 İÇ ÇÖKÜŞ","İstikrar sıfıra düştü, ülke iç kargaşaya sürüklendi."); return; }
-    if(p.publicSupport<=0){ ui.gameOver("🪧 HÜKÜMET DÜŞTÜ","Halk desteği tükendi, uzayan savaşlar sonucu hükümet istifaya zorlandı."); return; }
+    if(state.govCrisisTurns>=4){ ui.gameOver("🪧 HÜKÜMET DÜŞTÜ","Halk desteği uzun süre kritik seviyede kaldı, hükümet istifaya zorlandı."); return; }
     if(ownedByPlayer >= totalCities*0.6){ ui.gameOver("🏆 ZAFER","Dünya haritasının %60'ından fazlasını kontrol ediyorsunuz. Kara Kartal Doktrini zaferle sonuçlandı!"); return; }
 
     ui.updateAll();
+    // YENİ: Tur Sonu Raporu — bu turda üretilen tüm log satırlarını
+    // ayrı bir modalda özetler.
+    ui.showTurnReport(logLines.slice(logStartIdx), state.turn);
   }
 };
 
@@ -1062,15 +1480,17 @@ let projectiles=[], particles=[], interceptors=[], nextProjId=1;
 
 const animator = {
   loopStarted:false,
-  spawnAttack(srcCity,tgtCity,type,attackerID,dmgOverride){
+  spawnAttack(srcCity,tgtCity,type,attackerID,dmgOverride,sourceBatch){
     let src = project(srcCity.lat, srcCity.lon);
     let tgt = project(tgtCity.lat, tgtCity.lon);
+    const SPEEDS = { nuke:0.0035, kara_birligi:0.0018, amphibious:0.0018, airborne:0.0028, ballistic_icbm:0.003 };
+    const LOW_CURVE = new Set(['kara_birligi','amphibious','airborne']); // kara ailesi haritada düz/alçak bir yol izler
     projectiles.push({
       id: nextProjId++,
       x:src.x, y:src.y, sx:src.x, sy:src.y, tx:tgt.x, ty:tgt.y, prog:0,
-      speed: type==='nuke'?0.0035:(type==='kara_birligi'?0.0018:(type.startsWith('ballistic_icbm')?0.003:0.006)),
-      type, tgtCity, hssHit:false, attackerID, frozen:false, dmgOverride,
-      curve: type==='kara_birligi'?(Math.random()-0.5)*10:(Math.random()-0.5)*150
+      speed: SPEEDS[type] || 0.006,
+      type, tgtCity, hssHit:false, attackerID, frozen:false, dmgOverride, sourceBatch,
+      curve: LOW_CURVE.has(type) ? (Math.random()-0.5)*10 : (Math.random()-0.5)*150
     });
   }
 };
@@ -1102,15 +1522,22 @@ function gameLoop(){
     p.y = p.sy + (p.ty-p.sy)*p.prog - Math.sin(p.prog*Math.PI)*p.curve;
 
     let targetCountry = state.countries[p.tgtCity.owner];
+    const GROUND_FAMILY = new Set(['kara_birligi','amphibious','airborne']);
 
-    if(p.type!=='kara_birligi' && p.prog>0.55 && p.prog<0.62 && !p.hssHit){
+    // YENİ: hava savunması artık sadece uçan mühimmatı (füze/drone/uçak/
+    // nükleer) hedef alıyor — kara/çıkarma/hava indirme harekâtları
+    // (karaya çıkan/inen birlikler) HSS tarafından değil, hedefin DİRENİŞ
+    // seviyesine göre (aşağıda çarpışma anında) karşılanıyor.
+    if(!GROUND_FAMILY.has(p.type) && p.prog>0.55 && p.prog<0.62 && !p.hssHit){
       p.hssHit=true;
       let layer = getDefenseLayer(p.type);
       let hssLayer = p.tgtCity.hss[layer];
       if(targetCountry.radarJammed<=0 && hssLayer.current>0){
         hssLayer.current--;
         let radarBonus = (p.tgtCity.owner===state.playerID && state.player.tech.radar) ? 0.15:0;
-        let chance = (p.type==='nuke'?0.15:0.30) + radarBonus;
+        // YENİ: Saldıran ülkeye karşı hava sahası kapatılmışsa önleme şansı artar
+        let airspaceBonus = (p.tgtCity.owner===state.playerID && state.countries[p.attackerID] && state.countries[p.attackerID].airspaceBanned) ? 0.10:0;
+        let chance = (p.type==='nuke'?0.15:0.30) + radarBonus + airspaceBonus;
         if(Math.random()<chance){
           p.frozen = true;
           let cityPos = project(p.tgtCity.lat, p.tgtCity.lon);
@@ -1121,20 +1548,28 @@ function gameLoop(){
 
     let scr = mapToScreen(p.x,p.y);
     ctx.beginPath();
-    if(p.type==='kara_birligi'){ ctx.fillStyle="#4ade80"; ctx.fillRect(scr.x-3*scr.s,scr.y-3*scr.s,6*scr.s,6*scr.s); }
+    const GROUND_COLOR = {kara_birligi:"#4ade80", amphibious:"#38bdf8", airborne:"#a3e635"};
+    if(GROUND_FAMILY.has(p.type)){ ctx.fillStyle=GROUND_COLOR[p.type]; ctx.fillRect(scr.x-3*scr.s,scr.y-3*scr.s,6*scr.s,6*scr.s); }
     else{ ctx.arc(scr.x,scr.y,(p.type==='nuke'?5:3)*scr.s,0,Math.PI*2); ctx.fillStyle = p.type==='nuke'?"#00ff66":(p.type==='gen5_jet'?"#38bdf8":"#ff3344"); ctx.fill(); }
 
     if(p.prog>=1){
       createExplosion(p.tx,p.ty,p.type);
-      let dmg = p.dmgOverride!==undefined ? p.dmgOverride : (WEAPON_CONFIG[p.type] ? WEAPON_CONFIG[p.type].dmg : 20);
+      let cfg = WEAPON_CONFIG[p.type];
+      let dmg = p.dmgOverride!==undefined ? p.dmgOverride : (cfg ? cfg.dmg : 20);
       if(p.type==='gen5_jet' && p.attackerID===state.playerID && state.player.tech.gen5_jet) dmg = Math.round(dmg*1.3);
-      let damage = p.type==='nuke' ? 999 : dmg;
-      p.tgtCity.hp = Math.max(0, p.tgtCity.hp - damage);
-      if(p.tgtCity.hp===0){
-        p.tgtCity.owner = p.attackerID; p.tgtCity.hp=60;
-        ['short','medium','long'].forEach(l=>{ p.tgtCity.hss[l].current = Math.round(p.tgtCity.hss[l].cap*0.3); });
-        ui.buildMap();
-        log(`🏳️ ŞEHİR DÜŞTÜ: ${p.tgtCity.name} ele geçirildi!`,"#00ff66");
+
+      if(cfg && cfg.capture){
+        resolveGroundAssault(p.tgtCity, p.attackerID, cfg, p.sourceBatch);
+      } else {
+        // YENİ: SUPPRESSION-ONLY — füze/drone/uçak/nükleer artık şehri asla
+        // ele geçirmez, sadece hasar (hp) ve direniş (resistance) düşürür.
+        p.tgtCity.hp = Math.max(0, p.tgtCity.hp - dmg);
+        p.tgtCity.resistance = Math.max(0, p.tgtCity.resistance - dmg);
+        if(p.attackerID===state.playerID){
+          log(`💥 ${p.tgtCity.name} vuruldu! HP:%${p.tgtCity.hp} Direniş:%${p.tgtCity.resistance} — ilhak için kara/çıkarma/hava indirme harekâtı gerekli.`,"#ff8800");
+        } else if(p.tgtCity.owner===state.playerID){
+          log(`💥 ŞEHRİMİZ VURULDU: ${p.tgtCity.name} — HP:%${p.tgtCity.hp} Direniş:%${p.tgtCity.resistance}`,"#ff8800");
+        }
       }
       projectiles.splice(i,1);
       ui.updateAll();
