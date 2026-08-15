@@ -59,7 +59,25 @@
     <label for="country-dropdown" class="small-note">Oynayacağınız Ülke</label>
     <select id="country-dropdown" onchange="ui.updateCountryPreview()"></select>
     <div id="country-preview"></div>
+    <!-- YENİ: Zorluk seviyesi — AI doktrin agresifliğini, büyüme hızını ve
+         küçük ülkelerin ekonomik dezavantajını etkiler. -->
+    <label for="difficulty-select" class="small-note">Zorluk Seviyesi</label>
+    <select id="difficulty-select">
+      <option value="easy">Kolay (AI daha pasif, ekonomi daha kolay)</option>
+      <option value="normal" selected>Normal</option>
+      <option value="hard">Zor (AI daha agresif, küçük ülke ekonomisi daha zor)</option>
+    </select>
     <button id="btn-start-sim" onclick="engine.startGameFromDropdown()">🚀 SİMÜLASYONU BAŞLAT</button>
+    <button onclick="ui.openTutorial()" style="background:#374151;">📖 Nasıl Oynanır?</button>
+    <!-- YENİ: API anahtarı artık oyuna başlamadan ÖNCE de girilebilir.
+         AI Merkezi'nin Ayarlar sekmesi state'e bağlı değildir, bu yüzden
+         oyun başlamadan da güvenle açılabilir. -->
+    <button onclick="ui.openAiPanel()" style="background:#3a2a5a;">🤖 AI Ayarları</button>
+    <!-- YENİ: Ses Ayarları da (AI Ayarları gibi) oyuna başlamadan önce
+         erişilebilir olmalı — ana menü müziği (Mozart Türk Marşı) oyun
+         açılır açılmaz çalmaya başlayacağı için, oyuncu hemen ses
+         seviyesini ayarlayabilmeli. -->
+    <button onclick="ui.openAudioSettings()" style="background:#124a4a;">🔊 Ses Ayarları</button>
   </div>
   <div id="load-code-box">
     <button onclick="document.getElementById('load-code-area').style.display='flex'; this.style.display='none';" style="background:#0d6e63;">📥 Kayıtlı Kodum Var, Devam Et</button>
@@ -68,6 +86,84 @@
       <button onclick="engine.loadCodeFromStart()" style="background:#0d6e63;">Kodu Yükle ve Devam Et</button>
     </div>
   </div>
+</div>
+
+<!-- YENİ: Tutorial — hem başlangıç ekranından hem oyun içinden açılabilir,
+     adım adım ilerleyen kapatılabilir bir pencere. -->
+<div class="panel" id="tutorial-panel">
+  <h2>📖 Nasıl Oynanır — <span id="tutorial-step-label"></span></h2>
+  <div id="tutorial-body" class="un-list"></div>
+  <div style="display:flex;gap:6px;">
+    <button class="btn-tech" onclick="ui.tutorialPrev()">◀ Geri</button>
+    <button class="btn-tech" onclick="ui.tutorialNext()">İleri ▶</button>
+    <button class="btn-tech" style="background:#374151;" onclick="ui.closeTutorial()">Kapat</button>
+  </div>
+</div>
+
+<!-- ================= YENİ: AI İZİN ONAYI (rıza ekranı) =================
+     AI özellikleri ilk kez kullanılmadan önce (herhangi bir danışman,
+     sohbet, ülkeyle konuşma ya da komut denemesi öncesinde) bir kere
+     sorulur. "Hayır" seçilirse hiçbir AI çağrısı yapılmaz, oyun tamamen
+     normal şekilde çalışır. Bu onay Ayarlar sekmesinden sonradan
+     değiştirilebilir. Sadece API anahtarının GİRİLMİŞ olması bu izni
+     otomatik vermez — ayrı ayrı sorulur/saklanır.
+     BİLİNÇLİ OLARAK #game-container DIŞINDA: API anahtarı ve izin,
+     oyun başlamadan ÖNCE de (başlangıç ekranındaki "🤖 AI Ayarları"
+     butonundan) ayarlanabilmeli — #game-container "display:none" iken
+     içindeki hiçbir panel görünür olamaz, o yüzden bu ikisi dışarıda. -->
+<div id="ai-consent-modal" class="panel">
+  <h2>🔐 AI İzni</h2>
+  <div class="un-list">Oyun verilerinin ve gerekli oyun kodu bilgilerinin seçtiğiniz AI sağlayıcısına gönderilmesine izin veriyor musunuz?
+    <br><br>Bu veriler SADECE seçtiğiniz sağlayıcıya (Anthropic/OpenAI/Gemini) gönderilir, başka hiçbir yere iletilmez. "Hayır" derseniz AI özellikleri (Danışman/Sohbet/Ülkeyle Konuş/Komut) kullanılamaz, ama oyunun kendisi tamamen normal çalışır. Bu kararı istediğiniz zaman AI Merkezi → Ayarlar'dan değiştirebilirsiniz.</div>
+  <div style="display:flex;gap:8px;">
+    <button style="flex:1;background:#0d6e63;" onclick="ui.setAiConsent(true)">✅ Evet, İzin Veriyorum</button>
+    <button style="flex:1;background:#7a1f1f;" onclick="ui.setAiConsent(false)">❌ Hayır</button>
+  </div>
+</div>
+
+<!-- ================= YENİ: AI MERKEZİ =================
+     SADECE Ayarlar (API sağlayıcı/model/anahtar/izin) ve Danışmanlar (6
+     bakan/danışman) burada. Sohbet/Komut/Ülkeyle Konuş — Pax Historia
+     videosundaki gibi — haritanın sol altındaki ayrı butonlara taşındı
+     (bkz. #map-ai-buttons, #game-container içinde), AI Merkezi'nde
+     İKİNCİ bir kopyaları YOK. API anahtarı boşsa oyun tamamen AI'sız,
+     şu anki haliyle çalışmaya devam eder. Tüm içerik game.js tarafından
+     #ai-tab-body içine dinamik olarak yazılır. Bu panel de BİLİNÇLİ
+     OLARAK #game-container dışında (yukarıdaki not ile aynı sebep). -->
+<div id="ai-panel" class="panel">
+  <h2>🤖 AI Merkezi</h2>
+  <div id="ai-tabs" style="display:flex;flex-wrap:wrap;gap:6px;">
+    <button data-tab="settings"  class="btn-law active" onclick="ui.showAiTab('settings')">⚙️ Ayarlar</button>
+    <button data-tab="advisors"  class="btn-law"        onclick="ui.showAiTab('advisors')">🧠 Danışmanlar</button>
+  </div>
+  <div id="ai-tab-body" style="flex:1;overflow-y:auto;"></div>
+  <button onclick="ui.closeAiPanel()" style="background:#7a1f1f;">✕ Kapat</button>
+</div>
+
+<!-- ================= YENİ: SES AYARLARI =================
+     Müzik ve efekt (SFX) sesi BİRBİRİNDEN AYRI kontrol edilir, ikisi de
+     tamamen kapatılabilir. AI panelleriyle AYNI sebeple #game-container
+     DIŞINDA: ana menü müziği oyun başlamadan çalmaya başlar, oyuncu
+     hemen ses seviyesini ayarlayabilmeli. soundEngine (game.js) bu
+     kontrolleri okuyup localStorage'da saklar — kayıt koduna dahil
+     DEĞİLDİR (tercih, oyun verisi değildir). -->
+<div id="audio-settings-panel" class="panel">
+  <h2>🔊 Ses Ayarları</h2>
+  <label>Müzik Sesi: <b id="music-vol-label">%70</b></label>
+  <input type="range" id="music-vol-slider" min="0" max="100" value="70" oninput="musicEngine.setMusicVolume(this.value)">
+  <label style="display:flex;align-items:center;gap:6px;flex-direction:row;">
+    <input type="checkbox" id="music-mute-toggle" onchange="musicEngine.setMusicMuted(this.checked)" style="width:auto;"> Müziği tamamen kapat
+  </label>
+  <label>Efekt (SFX) Sesi: <b id="sfx-vol-label">%80</b></label>
+  <input type="range" id="sfx-vol-slider" min="0" max="100" value="80" oninput="soundEngine.setSfxVolume(this.value)">
+  <label style="display:flex;align-items:center;gap:6px;flex-direction:row;">
+    <input type="checkbox" id="sfx-mute-toggle" onchange="soundEngine.setSfxMuted(this.checked)" style="width:auto;"> Efektleri tamamen kapat
+  </label>
+  <div class="small-note">Müzik oyun durumuna göre otomatik değişir (ana menü/dünya haritası/kriz/savaş/zafer/yenilgi). Bu ayarlar sadece ses SEVİYESİNİ kontrol eder.</div>
+  <!-- YENİ: müzik yüklenemezse (yanlış yol/ağ hatası/format sorunu) BURADA
+       tam hata mesajı görünür — artık sessizce başarısız olmuyor. -->
+  <div id="music-error-status" style="display:none;background:#2a0a0a;border:1px solid #7a1f1f;border-radius:4px;padding:8px;margin-top:8px;font-size:.72rem;color:#ff9999;"></div>
+  <button onclick="ui.closeAudioSettings()" style="background:#7a1f1f;">✕ Kapat</button>
 </div>
 
 <div id="game-container" style="display:none;">
@@ -83,6 +179,16 @@
       <button onclick="ui.zoomMap(1/1.3)" title="Uzaklaştır">➖</button>
       <button onclick="ui.resetMapZoom()" title="Sıfırla">⤢</button>
     </div>
+    <!-- ================= YENİ: AI HIZLI ERİŞİM (Pax Historia'daki sol-alt
+         buton yerleşimi ile aynı mantık) — 3 ayrı sistem, üst üste:
+         💬 Sohbet (genel/serbest), 📝 Komut (doğal dilde oyun emri),
+         🌍 Ülkeyle Konuş (diplomatik AI sohbetleri, tekli/toplu). Her
+         biri kendi ayrı panelini açar — birbirine karışmaz (madde 9). -->
+    <div id="map-ai-buttons">
+      <button onclick="ui.openAiChatPanel()" title="AI Sohbet">💬</button>
+      <button onclick="ui.openAiCommandPanel()" title="Komut Ver">📝</button>
+      <button onclick="ui.openCountryChatPanel()" title="Ülkeyle Konuş">🌍</button>
+    </div>
   </div>
 
   <!-- Mobilde görünür sekme çubuğu — YENİ: 3. sekme BM Konseyi -->
@@ -90,6 +196,51 @@
     <button id="tab-left" class="active" onclick="ui.switchTab('left')">🏛️ Karargâh</button>
     <button id="tab-right" onclick="ui.switchTab('right')">⚔️ Diplomasi</button>
     <button id="tab-un" onclick="ui.switchTab('un')">🇺🇳 BM</button>
+    <button id="tab-cabinet" onclick="ui.switchTab('cabinet')">👥 Kabine</button>
+    <button id="tab-stats" onclick="ui.switchTab('stats')">📊 İstatistik</button>
+    <button id="tab-ai" onclick="ui.openAiPanel()">🤖 AI</button>
+    <button id="tab-audio" onclick="ui.openAudioSettings()">🔊 Ses</button>
+  </div>
+
+  <!-- ================= YENİ: 💬 AI SOHBET (genel, serbest konuşma) =================
+       Kendi ülkenizin genel danışmanıyla değil, hiçbir role bağlı olmadan
+       serbestçe konuşulan ayrı sistem (bkz. madde 9 — 4 sistem birbirinden
+       ayrı). Pax Historia'daki "Danışman" ekranına benzer: öneri çipleri +
+       mesaj geçmişi + giriş kutusu. -->
+  <div id="ai-chat-panel" class="panel">
+    <h2>💬 AI Sohbet <button onclick="ui.clearAiChat()" title="Sohbeti Temizle" style="float:right;background:#374151;padding:4px 8px;">🧹</button></h2>
+    <div id="ai-chat-body" style="flex:1;overflow-y:auto;"></div>
+    <button onclick="ui.closeAiChatPanel()" style="background:#7a1f1f;">✕ Kapat</button>
+  </div>
+
+  <!-- ================= YENİ: 📝 KOMUT (doğal dilde oyun motoru emri) =================
+       Sohbetin İÇİNE gömülmemiş, tamamen ayrı bir sistem. AI burada asla
+       kod çalıştırmaz — sadece AI_ALLOWED_ACTIONS tablosundaki bir eylem
+       önerir, oyun motoru doğrular, oyuncu Onayla/Uygula ile devreye
+       alır. -->
+  <div id="ai-command-panel" class="panel">
+    <h2>📝 Komut Ver</h2>
+    <div class="small-note">Örnek: "Pakistan ile ticaret anlaşması yap.", "Azerbaycan'a ekonomik yardım gönder.", "Savunma bütçesini artır."</div>
+    <div id="ai-command-body" style="flex:1;overflow-y:auto;"></div>
+    <button onclick="ui.closeAiCommandPanel()" style="background:#7a1f1f;">✕ Kapat</button>
+  </div>
+
+  <!-- ================= YENİ: 🌍 ÜLKEYLE KONUŞ (diplomatik AI sohbetleri) =================
+       Pax Historia'daki "Diplomatik Sohbetler" ekranıyla aynı mantık:
+       - Liste görünümü: geçmiş konuşmalar (tekli veya TOPLU/grup) tarih
+         sırasına göre, "Yeni Sohbet Başlat" ile başlar.
+       - Seçim görünümü: 22 ülkenin TAMAMINDAN istediğiniz kadarını seçip
+         tek/grup sohbet başlatabilirsiniz.
+       - Sohbet görünümü: seçili ülke(ler) ile mesajlaşma; ülkenin cevabı
+         mevcut ilişki/ekonomi/savaş/ittifak durumuna göre AI tarafından
+         üretilir ve somut bir diplomatik teklifse Onayla/Uygula ile
+         gerçek diplomasi sistemine (engine.diplomacy) işlenir.
+       Üç görünüm de aynı #country-chat-body içine game.js tarafından
+       dinamik olarak yazılır — HTML'de sadece kabuk var. -->
+  <div id="country-chat-panel" class="panel">
+    <h2 id="country-chat-title">🌍 Diplomatik Sohbetler</h2>
+    <div id="country-chat-body" style="flex:1;overflow-y:auto;"></div>
+    <button onclick="ui.closeCountryChatPanel()" style="background:#7a1f1f;">✕ Kapat</button>
   </div>
 
   <div class="panel mobile-active" id="left-panel">
@@ -110,6 +261,8 @@
     <div class="stat-box">⚖️ İstikrar <b id="val-stability"></b></div>
     <div class="stat-box support-box">🫡 Halk Desteği <b id="val-support"></b></div>
     <div class="stat-box">☢️ Uranyum <b id="val-uranium"></b></div>
+    <!-- YENİ: Hammadde — fabrikaların üretimi ve bazı silahların üretimi için gerekli -->
+    <div class="stat-box">⛏️ Hammadde <b id="val-resources"></b></div>
     <div class="stat-box">⏳ Tur <b id="val-turn"></b></div>
     <div class="stat-box tension-box">🌍 Global Tansiyon <b id="val-tension"></b></div>
     <div class="stat-box" id="refugee-box" style="display:none;">🏕️ Mülteci Akını <b id="val-refugee"></b></div>
@@ -163,6 +316,14 @@
     <!-- YENİ: Ar-Ge artık anlık değil, kuyrukta birkaç tur bekliyor -->
     <div id="research-queue-box" class="small-note">Aktif Ar-Ge yok</div>
 
+    <!-- YENİ: Fabrikalar — hammadde üretir/tüketir, ekonomi ve üretim
+         hızını etkiler. Haritada şehrin yanında küçük bir simge olarak
+         görünür (bkz. ui.buildMap()). -->
+    <h3>Fabrikalar</h3>
+    <label>İnşa Edilecek Şehir</label>
+    <select id="factory-city-select"></select>
+    <div id="factory-list-box"></div>
+
     <h3>Askeri Fabrika</h3>
     <label>Ürün</label>
     <select id="prod-item" onchange="engine.calcProdTime()">
@@ -200,6 +361,13 @@
       <button class="btn-tech" onclick="engine.upgradeDefense('long')">🛡️🛡️🛡️ Uzun Menzil (140.000$)</button>
     </div>
     <div class="small-note">Kısa: drone/düşük irtifa · Orta: balistik/uçak · Uzun: ICBM/nükleer</div>
+
+    <!-- YENİ: Siber Savunma — düşmanın size yönelik siber operasyonlarının
+         başarı şansını düşürür (mevcut Siber İstihbarat Ağı Ar-Ge'sinden
+         ayrı, kalıcı bir yatırım). -->
+    <h3>Siber Savunma</h3>
+    <div class="small-note">Seviye: <b id="cyber-defense-level">0</b> — her seviye düşmanın size yönelik siber operasyon başarı şansını düşürür.</div>
+    <button class="btn-tech" onclick="engine.upgradeCyberDefense()">🛡️💻 Siber Savunmayı Güçlendir (60.000$)</button>
 
     <h3>Envanter</h3>
     <div id="inventory-list"></div>
@@ -244,7 +412,20 @@
     <button class="btn-dip" style="background:#4a1f3a;" onclick="engine.diplomacy('arms_embargo')">🔫 Silah Ambargosu</button>
     <!-- YENİ: Hava sahasını kapatma — düşmanın uçak/İCBM güzergahını zorlaştırır -->
     <button class="btn-dip" style="background:#2b3a4a;" onclick="engine.diplomacy('airspace_ban')">✈️🚫 Hava Sahasını Kapat</button>
-    <button class="btn-dip" style="background:#5a1f7a;" onclick="engine.diplomacy('cyber_attack')">💻 Siber Saldırı (40.000$)</button>
+    <!-- YENİ: "Siber Operasyonlar" artık "Faaliyetler" — 4 ayrı buton yerine
+         tek dropdown + tek buton (yer kazandırmak için, ülke seçim
+         ekranındaki dropdown mantığıyla aynı). Hedef başına tur başı
+         sadece 1 deneme hakkı var, başarı şansı güç kademesi (Tier)
+         farkına göre değişir. -->
+    <h3>Faaliyetler</h3>
+    <div class="small-note">Hedef başına tur başı sadece 1 deneme hakkı var. Başarı şansı güç kademesi farkına göre değişir.</div>
+    <select id="cyber-op-select">
+      <option value="jam">💻 Radar Körletme (40.000$)</option>
+      <option value="sabotage_prod">🏭 Üretim Sabotajı (45.000$)</option>
+      <option value="financial">💰 Mali Sızma (50.000$)</option>
+      <option value="disinfo">📰 Dezenformasyon (35.000$)</option>
+    </select>
+    <button class="btn-dip" style="background:#5a1f7a;" onclick="engine.cyberOp(document.getElementById('cyber-op-select').value)">💻 Siber Saldırı Başlat</button>
     <button class="btn-dip" style="background:#7a1f3a;" onclick="engine.diplomacy('sabotage')">🕵️ Sabotaj Ajanı (30.000$)</button>
     <button class="btn-dip" style="background:#1f4e7a;" onclick="engine.diplomacy('blockade')">🚢 Deniz Ablukası (1 Fırkateyn)</button>
     <button class="btn-dip" style="background:#0d6e63;" onclick="engine.diplomacy('steal_tech')">🎯 Teknoloji Çal (50.000$)</button>
@@ -264,6 +445,7 @@
     <label>Mühimmat</label>
     <select id="attack-weapon" onchange="ui.updateAll()">
       <option value="drone_swarm">Sürü Drone (1.500km, Hasar 8) — sadece direnişi düşürür</option>
+      <option value="cruise_missile">➤ Seyir Füzesi (2.500km, Hasar 20) — alçak/düz uçar, sadece direnişi düşürür</option>
       <option value="ballistic_short">Balistik Füze — Kısa (2.000km, Hasar 18) — sadece direnişi düşürür</option>
       <option value="ballistic_medium">Balistik Füze — Orta (5.000km, Hasar 24) — sadece direnişi düşürür</option>
       <option value="ballistic_icbm">🚀 Kıtalararası Füze (12.000km, Hasar 30) — sadece direnişi düşürür</option>
@@ -323,6 +505,40 @@
     <h2>📋 Tur Raporu — <span id="turn-report-year"></span></h2>
     <div id="turn-report-body" class="un-list"></div>
     <button class="btn-tech" onclick="ui.closeTurnReport()">Kapat</button>
+  </div>
+
+  <!-- YENİ: Kriz Uyarı Penceresi — advancedSystem.checkEvents() bir kriz
+       tetiklediğinde, log satırına ek olarak ekranın ortasına düşen,
+       dikkat çekici bir pop-up. Diğer modallerden farklı (kırmızı/turuncu
+       vurgulu, otomatik açılır — buton tıklamasıyla değil). -->
+  <div class="panel" id="crisis-popup">
+    <h2 id="crisis-title">⚠️ KRİZ</h2>
+    <div id="crisis-body" class="un-list"></div>
+    <button class="btn-tech" style="background:#7a1f1f;" onclick="ui.closeCrisisPopup()">Anladım</button>
+  </div>
+
+  <!-- YENİ: Kabine — 4 bakanlık, her biri duruma göre otomatik rapor +
+       öneri üretir. Sekmeli yapı, aynı modal mimarisi. -->
+  <div class="panel" id="cabinet-panel">
+    <h2>👥 Kabine</h2>
+    <div id="cabinet-tabs" style="display:flex;gap:4px;flex-wrap:wrap;">
+      <button class="btn-law" onclick="ui.showCabinetTab('finance')">💰 Maliye</button>
+      <button class="btn-law" onclick="ui.showCabinetTab('foreign')">🤝 Dışişleri</button>
+      <button class="btn-law" onclick="ui.showCabinetTab('interior')">🏠 İçişleri</button>
+      <button class="btn-law" onclick="ui.showCabinetTab('defense')">🪖 Savunma</button>
+    </div>
+    <div id="cabinet-body" class="un-list"></div>
+    <button class="btn-tech" style="background:#374151;" onclick="ui.closeCabinet()">Kapat</button>
+  </div>
+
+  <!-- YENİ: İstatistikler — GSYH/nüfus/teknoloji/mutluluk zaman içindeki
+       trendi (basit çizgi grafik, harici kütüphane gerektirmez). -->
+  <div class="panel" id="stats-panel">
+    <h2>📊 Dünya İstatistikleri</h2>
+    <div class="small-note">Hazine, Halk Desteği, İstikrar ve Teknoloji sayısının tur içindeki gelişimi.</div>
+    <canvas id="stats-chart" width="480" height="220"></canvas>
+    <div id="stats-legend" class="small-note"></div>
+    <button class="btn-tech" style="background:#374151;" onclick="ui.closeStats()">Kapat</button>
   </div>
 </div>
 

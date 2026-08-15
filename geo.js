@@ -1,5 +1,5 @@
 /* ================= GEO.JS — Dünya Verisi + Harita Motoru =================
-   20 tam simüle ülke + 6 pasif kıta bloğu + GERÇEK dünya haritası.
+   22 tam simüle ülke + 6 pasif kıta bloğu + GERÇEK dünya haritası.
 
    Harita iki katmanlı çalışır:
    1) GERÇEK HARİTA (tercih edilen): D3.js + canlı TopoJSON (jsDelivr CDN,
@@ -17,7 +17,7 @@
    engellenmiş olur.
 */
 
-/* ---------------- 20 OYNANABİLİR ÜLKE ---------------- */
+/* ---------------- 22 OYNANABİLİR ÜLKE ---------------- */
 const GEO_DATA = {
   USA:{ name:"ABD", color:"#1e3a8a", cities:[
     {name:"Washington DC", lat:38.9, lon:-77.0, hssCap:55},
@@ -110,6 +110,21 @@ const GEO_DATA = {
   UKR:{ name:"Ukrayna", color:"#facc15", cities:[
     {name:"Kiev",   lat:50.45,lon:30.52,hssCap:40},
     {name:"Harkiv", lat:49.99,lon:36.23,hssCap:25}
+  ]},
+  /* YENİ: Azerbaycan — Türkiye ile aynı sisteme tam entegre (harita,
+     şehirler, ekonomi, ordu, teknoloji, Tier, fabrika, envanter,
+     diplomasi, siber, istihbarat, savaş — hepsi diğer ülkelerle birebir
+     aynı jenerik motordan geçiyor, ayrı bir kod yolu YOK). */
+  AZE:{ name:"Azerbaycan", color:"#0e7490", cities:[
+    {name:"Bakü",   lat:40.41,lon:49.87,hssCap:35},
+    {name:"Gence",  lat:40.68,lon:46.36,hssCap:20}
+  ]},
+  /* YENİ: Pakistan — Azerbaycan için belirtilen tüm sistemlere aynı
+     şekilde entegre (aşağıdaki tüm sabitlerde karşılığı var). */
+  PAK:{ name:"Pakistan", color:"#3f6212", cities:[
+    {name:"İslamabad", lat:33.68,lon:73.05,hssCap:40},
+    {name:"Karaçi",    lat:24.86,lon:67.01,hssCap:35},
+    {name:"Lahor",     lat:31.55,lon:74.34,hssCap:30}
   ]}
 };
 
@@ -117,38 +132,74 @@ const FLAGS = {
   USA:"🇺🇸", RUS:"🇷🇺", CHN:"🇨🇳", TUR:"🇹🇷", GRE:"🇬🇷", ISR:"🇮🇱",
   EGY:"🇪🇬", LBY:"🇱🇾", DZA:"🇩🇿", MAR:"🇲🇦", SOM:"🇸🇴", GBR:"🇬🇧",
   FRA:"🇫🇷", DEU:"🇩🇪", IND:"🇮🇳", IRN:"🇮🇷", SAU:"🇸🇦", JPN:"🇯🇵",
-  KOR:"🇰🇷", UKR:"🇺🇦"
+  KOR:"🇰🇷", UKR:"🇺🇦", AZE:"🇦🇿", PAK:"🇵🇰"
+};
+
+/* YENİ: Gerçek bayrak görselleri (Wikimedia Commons, herkese açık/kamu
+   malı SVG dosyaları). FLAGS (emoji) kaldırılmadı — CDN'e erişilemezse
+   veya <img> yüklenemezse emoji otomatik yedek olarak kalıyor. */
+const FLAG_IMAGES = {
+  USA:"https://upload.wikimedia.org/wikipedia/commons/a/a4/Flag_of_the_United_States.svg",
+  RUS:"https://upload.wikimedia.org/wikipedia/commons/f/f3/Flag_of_Russia.svg",
+  CHN:"https://upload.wikimedia.org/wikipedia/commons/f/fa/Flag_of_the_People%27s_Republic_of_China.svg",
+  TUR:"https://upload.wikimedia.org/wikipedia/commons/b/b4/Flag_of_Turkey.svg",
+  GRE:"https://upload.wikimedia.org/wikipedia/commons/5/5c/Flag_of_Greece.svg",
+  ISR:"https://upload.wikimedia.org/wikipedia/commons/d/d4/Flag_of_Israel.svg",
+  EGY:"https://upload.wikimedia.org/wikipedia/commons/f/fe/Flag_of_Egypt.svg",
+  LBY:"https://upload.wikimedia.org/wikipedia/commons/0/05/Flag_of_Libya.svg",
+  DZA:"https://upload.wikimedia.org/wikipedia/commons/7/77/Flag_of_Algeria.svg",
+  MAR:"https://upload.wikimedia.org/wikipedia/commons/2/2c/Flag_of_Morocco.svg",
+  SOM:"https://upload.wikimedia.org/wikipedia/commons/a/a0/Flag_of_Somalia.svg",
+  GBR:"https://upload.wikimedia.org/wikipedia/commons/8/83/Flag_of_the_United_Kingdom_%283-5%29.svg",
+  FRA:"https://upload.wikimedia.org/wikipedia/commons/c/c3/Flag_of_France.svg",
+  DEU:"https://upload.wikimedia.org/wikipedia/commons/b/ba/Flag_of_Germany.svg",
+  IND:"https://upload.wikimedia.org/wikipedia/commons/4/41/Flag_of_India.svg",
+  IRN:"https://upload.wikimedia.org/wikipedia/commons/c/ca/Flag_of_Iran.svg",
+  SAU:"https://upload.wikimedia.org/wikipedia/commons/0/0d/Flag_of_Saudi_Arabia.svg",
+  JPN:"https://upload.wikimedia.org/wikipedia/commons/9/9e/Flag_of_Japan.svg",
+  KOR:"https://upload.wikimedia.org/wikipedia/commons/0/09/Flag_of_South_Korea.svg",
+  UKR:"https://upload.wikimedia.org/wikipedia/commons/4/49/Flag_of_Ukraine.svg",
+  AZE:"https://upload.wikimedia.org/wikipedia/commons/d/dd/Flag_of_Azerbaijan.svg",
+  PAK:"https://upload.wikimedia.org/wikipedia/commons/3/32/Flag_of_Pakistan.svg"
 };
 
 /* ---------------- GÜÇ KADEMELERİ (Tier 1 = en güçlü) ----------------
    Ekonomi/nüfus bu kademeye göre asimetrik verildi. Her turdaki otomatik
    büyüme hızı (Aşama 2) de bu tier'a bağlanacak — game.js'te GROWTH_RATES
    olarak tier numarasını kullanacak. */
+/* YENİ: Hammadde üretimi (tur başına, tier'e göre) — fabrika ekonomisi
+   bunu tüketir/üretir. Süper güçler en çok, en zayıf ülkeler en az üretir. */
 const STARTING_STATS = {
-  USA:{budget:950000, manpower:8000000,  uranium:6, invMult:1.6, tier:1, nuclear:true},
-  RUS:{budget:900000, manpower:7000000,  uranium:7, invMult:1.5, tier:1, nuclear:true},
-  CHN:{budget:1000000,manpower:14000000, uranium:5, invMult:1.5, tier:1, nuclear:true},
+  USA:{budget:950000, manpower:8000000,  uranium:6, invMult:1.6, tier:1, nuclear:true,  resources:50},
+  RUS:{budget:900000, manpower:7000000,  uranium:7, invMult:1.5, tier:1, nuclear:true,  resources:55},
+  CHN:{budget:1000000,manpower:14000000, uranium:5, invMult:1.5, tier:1, nuclear:true,  resources:48},
 
-  GBR:{budget:650000, manpower:2200000,  uranium:2, invMult:1.1, tier:2, nuclear:false},
-  FRA:{budget:640000, manpower:2100000,  uranium:2, invMult:1.1, tier:2, nuclear:false},
-  DEU:{budget:700000, manpower:2400000,  uranium:1, invMult:1.15,tier:2, nuclear:false},
-  IND:{budget:680000, manpower:12000000, uranium:3, invMult:1.2, tier:2, nuclear:false},
-  JPN:{budget:660000, manpower:2000000,  uranium:0, invMult:1.1, tier:2, nuclear:false},
+  GBR:{budget:650000, manpower:2200000,  uranium:2, invMult:1.1, tier:2, nuclear:false, resources:26},
+  FRA:{budget:640000, manpower:2100000,  uranium:2, invMult:1.1, tier:2, nuclear:false, resources:26},
+  DEU:{budget:700000, manpower:2400000,  uranium:1, invMult:1.15,tier:2, nuclear:false, resources:28},
+  IND:{budget:680000, manpower:12000000, uranium:3, invMult:1.2, tier:2, nuclear:false, resources:30},
+  JPN:{budget:660000, manpower:2000000,  uranium:0, invMult:1.1, tier:2, nuclear:false, resources:22},
 
-  TUR:{budget:600000, manpower:5500000,  uranium:2, invMult:1.0, tier:3, nuclear:false},
-  ISR:{budget:520000, manpower:650000,   uranium:3, invMult:0.85,tier:3, nuclear:true},
-  IRN:{budget:520000, manpower:4200000,  uranium:2, invMult:0.9, tier:3, nuclear:false},
-  SAU:{budget:600000, manpower:1300000,  uranium:1, invMult:0.95,tier:3, nuclear:false},
-  EGY:{budget:480000, manpower:3800000,  uranium:1, invMult:0.8, tier:3, nuclear:false},
-  KOR:{budget:560000, manpower:2500000,  uranium:1, invMult:0.95,tier:3, nuclear:false},
-  UKR:{budget:400000, manpower:3000000,  uranium:1, invMult:0.75,tier:3, nuclear:false},
+  TUR:{budget:600000, manpower:5500000,  uranium:2, invMult:1.0, tier:3, nuclear:false, resources:18},
+  ISR:{budget:520000, manpower:650000,   uranium:3, invMult:0.85,tier:3, nuclear:true,  resources:14},
+  IRN:{budget:520000, manpower:4200000,  uranium:2, invMult:0.9, tier:3, nuclear:false, resources:20},
+  SAU:{budget:600000, manpower:1300000,  uranium:1, invMult:0.95,tier:3, nuclear:false, resources:22},
+  EGY:{budget:480000, manpower:3800000,  uranium:1, invMult:0.8, tier:3, nuclear:false, resources:16},
+  KOR:{budget:560000, manpower:2500000,  uranium:1, invMult:0.95,tier:3, nuclear:false, resources:17},
+  UKR:{budget:400000, manpower:3000000,  uranium:1, invMult:0.75,tier:3, nuclear:false, resources:19},
+  /* YENİ: Pakistan — nükleer güç, Türkiye/İran/S.Arabistan ile aynı Tier 3
+     kademesinde; büyük nüfusu invMult'a değil manpower'a yansıtıldı. */
+  PAK:{budget:500000, manpower:6000000,  uranium:3, invMult:0.9, tier:3, nuclear:true,  resources:18},
 
-  GRE:{budget:320000, manpower:1000000,  uranium:0, invMult:0.55,tier:4, nuclear:false},
-  DZA:{budget:380000, manpower:1900000,  uranium:0, invMult:0.6, tier:4, nuclear:false},
-  MAR:{budget:340000, manpower:1400000,  uranium:0, invMult:0.55,tier:4, nuclear:false},
+  GRE:{budget:320000, manpower:1000000,  uranium:0, invMult:0.55,tier:4, nuclear:false, resources:9},
+  DZA:{budget:380000, manpower:1900000,  uranium:0, invMult:0.6, tier:4, nuclear:false, resources:15},
+  MAR:{budget:340000, manpower:1400000,  uranium:0, invMult:0.55,tier:4, nuclear:false, resources:10},
+  /* YENİ: Azerbaycan — Yunanistan/Fas ile aynı Tier 4 kademesi; petrol/
+     doğalgaz ihracatçısı olduğu için resources biraz daha yüksek. */
+  AZE:{budget:300000, manpower:900000,   uranium:0, invMult:0.5, tier:4, nuclear:false, resources:14},
 
-  LBY:{budget:180000, manpower:400000,   uranium:0, invMult:0.35,tier:5, nuclear:false},
-  SOM:{budget:110000, manpower:300000,   uranium:0, invMult:0.25,tier:5, nuclear:false}
+  LBY:{budget:180000, manpower:400000,   uranium:0, invMult:0.35,tier:5, nuclear:false, resources:8},
+  SOM:{budget:110000, manpower:300000,   uranium:0, invMult:0.25,tier:5, nuclear:false, resources:3}
 };
 
 /* Tier'a göre her turdaki otomatik büyüme oranı (bütçe/nüfus çarpanı).
@@ -159,7 +210,7 @@ const TIER_GROWTH_RATE = {1:1.035, 2:1.025, 3:1.018, 4:1.012, 5:1.006};
 const START_STABILITY = {
   USA:90, RUS:85, CHN:85, GBR:88, FRA:82, DEU:88, IND:75, JPN:90,
   TUR:100,ISR:95, IRN:70, SAU:78, EGY:60, KOR:85, UKR:55,
-  GRE:80, DZA:65, MAR:75, LBY:35, SOM:25
+  GRE:80, DZA:65, MAR:75, LBY:35, SOM:25, AZE:78, PAK:58
 };
 
 const BASE_INVENTORY = {drone_swarm:100, ballistic_short:20, ballistic_medium:5, ballistic_icbm:0, kara_birligi:30, tank:15, frigate:5, gen5_jet:3, nuke:0};
@@ -182,7 +233,11 @@ const REL_OVERRIDES = [
   ["JPN","KOR",55],
   ["IND","USA",60], ["IND","RUS",60],
   ["LBY","EGY",45], ["LBY","DZA",45],
-  ["SOM","EGY",40]
+  ["SOM","EGY",40],
+  /* YENİ: Azerbaycan */
+  ["AZE","TUR",92], ["AZE","RUS",45], ["AZE","IRN",35], ["AZE","ISR",55], ["AZE","USA",50],
+  /* YENİ: Pakistan */
+  ["PAK","IND",8], ["PAK","CHN",85], ["PAK","USA",40], ["PAK","SAU",70], ["PAK","TUR",82], ["PAK","IRN",50]
 ];
 function buildRelationTable(){
   let allIds = Object.keys(GEO_DATA).concat(Object.keys(BLOC_DATA));
@@ -191,6 +246,38 @@ function buildRelationTable(){
   for(let [a,b,v] of REL_OVERRIDES){ if(table[a]) table[a][b]=v; if(table[b]) table[b][a]=v; }
   return table;
 }
+/* ---------------- YENİ: DİPLOMATİK TON =================
+   "Ülkeyle Konuş" (AI diplomatik sohbet) sisteminin her ülkeyi kendine
+   özgü bir üslupla konuşturması için kısa bir ton/karakter ipucu. Bu
+   SADECE AI'ın sistem promptuna eklenen bir stil yönlendirmesidir —
+   hiçbir sayısal oyun mekaniğini etkilemez, ilişki/ekonomi/savaş
+   durumu hâlâ tamamen state.countries üzerinden okunur. Ton tanımı
+   olmayan bir ülke için game.js genel/nötr bir ton kullanır. */
+const DIPLOMATIC_TONE = {
+  USA:"Kendinden emin, doğrudan, müttefiklerine sıcak ama kendi çıkarını her zaman öne koyan bir ton.",
+  RUS:"Sert, hesaplı, güç gösterisine yatkın; tehdit karşısında geri adım atmayan bir üslup.",
+  CHN:"Resmi, sabırlı, uzun vadeli çıkarları vurgulayan, doğrudan çatışmadan kaçınan bir dil.",
+  GBR:"Kibar ama net; diplomatik nezaketle kararlılığı birleştiren klasik bir ton.",
+  FRA:"Onurlu, bağımsız duruşunu vurgulayan, kendi çizgisini izleyen bir söylem.",
+  DEU:"Temkinli, kurallara ve uzlaşıya vurgu yapan, ölçülü bir dil.",
+  IND:"Kendine güvenen, 'stratejik özerklik' vurgusu yapan, tarafsızlığına değer veren bir ton.",
+  JPN:"Son derece kibar, resmi, uzlaşmacı ama arkasında kararlı bir duruş taşıyan bir üslup.",
+  TUR:"Gururlu, tarihi bağlara ve kardeşliğe vurgu yapan, güçlü ve doğrudan bir söylem.",
+  ISR:"Kısa, kesin, güvenlik önceliğini her zaman öne çıkaran bir ton.",
+  IRN:"Meydan okuyan, ideolojik vurgulu, dış baskıya karşı sert bir dil.",
+  SAU:"Ağırbaşlı, resmi, bölgesel istikrarı ve ekonomik çıkarları öne çıkaran bir ton.",
+  EGY:"Bölgesel liderlik vurgusu yapan, temkinli ama kararlı bir söylem.",
+  KOR:"Disiplinli, pragmatik, ekonomik işbirliğine açık ama güvenlik konusunda hassas bir ton.",
+  UKR:"Kararlı, duygusal olarak yüklü, direniş ve bağımsızlık vurgusu yapan bir dil.",
+  GRE:"Tarihi rekabete atıfta bulunan, gururlu ama diplomatik bir ton.",
+  DZA:"Bağımsızlığına düşkün, temkinli, dışarıdan müdahaleye karşı hassas bir söylem.",
+  MAR:"Ilımlı, istikrarlı, bölgesel dengeyi önemseyen bir dil.",
+  LBY:"Parçalanmış otoritenin izlerini taşıyan, tutarsız ve gerilimli bir ton.",
+  SOM:"Kırılgan, dış yardıma muhtaç ama gururunu koruyan bir söylem.",
+  AZE:"Kararlı, Türkiye'ye kardeşlik vurgusu yapan, bölgesel gücünü hissettiren bir ton.",
+  PAK:"Gururlu, güvenlik odaklı, Hindistan'a karşı hassas, İslam dünyasıyla dayanışma vurgusu yapan bir dil."
+};
+
 /* ---------------- 6 KITA BLOĞU (yarı-aktif) ----------------
    İç uyumsuzluk gerekçesiyle güçleri kasıtlı olarak ORTA SEVİYEDE tutulur
    (yaklaşık Tier 3 ülke seviyesi) — büyük güçlerden asla daha kuvvetli
@@ -266,7 +353,11 @@ const ISO_NUMERIC = {
   USA:"840", RUS:"643", CHN:"156", TUR:"792", GRE:"300", ISR:"376",
   EGY:"818", LBY:"434", DZA:"012", MAR:"504", SOM:"706", GBR:"826",
   FRA:"250", DEU:"276", IND:"356", IRN:"364", SAU:"682", JPN:"392",
-  KOR:"410", UKR:"804"
+  KOR:"410", UKR:"804",
+  /* YENİ: Azerbaycan/Pakistan bu tabloda hiç yoktu — bu yüzden harita
+     onları tanıyamayıp bulundukları kıtanın bloğuna (Avrupa/Asya)
+     düşürüyordu. ISO 3166-1 numeric kodları gerçek. */
+  AZE:"031", PAK:"586"
 };
 
 /* ---------------- YEDEK (offline) ÜLKE SİLÜETLERİ ----------------
@@ -293,7 +384,10 @@ const COUNTRY_SHAPES = {
   SAU:[[29,35],[29,48.5],[16.5,53],[16,42]],
   JPN:[[45.5,141.7],[43,144],[35,140],[31,130],[34,131]],
   KOR:[[38.6,128],[37.5,129.5],[34.5,127],[35,126]],
-  UKR:[[52.2,23.2],[52,40.2],[45.3,36],[44.5,33.5],[45.5,29]]
+  UKR:[[52.2,23.2],[52,40.2],[45.3,36],[44.5,33.5],[45.5,29]],
+  /* YENİ: Azerbaycan/Pakistan yedek harita silüetleri de eksikti. */
+  AZE:[[41.9,45],[41.3,49.6],[38.5,48.5],[39,46]],
+  PAK:[[37,74],[35,77.8],[24,68],[23.5,61],[29,60.9],[32,71]]
 };
 Object.assign(COUNTRY_SHAPES, BLOC_SHAPES); // 6 blok bölgesini de aynı tabloya ekle
 
@@ -389,13 +483,38 @@ const worldMap = {
 
       if(playableId && state.countries[playableId]){
         let c = state.countries[playableId];
-        path.setAttribute("fill", c.color);
+        /* ================= YENİ: TAM FETİHTE BÖLGE RENGİ =================
+           Eskiden sadece şehir noktaları fatihin rengine dönüyordu, bölgenin
+           kendisi (harita üzerindeki sınır dolgusu) hep ORİJİNAL sahibinin
+           rengiyle kalıyordu. Artık bir ülkenin TÜM şehirleri başka TEK bir
+           ülkeye aitse, bölgenin kendisi de o fatihin rengini alır — "tamamen
+           ele geçirdim" hissi haritada da görünür olur. */
+        let uniqueOwners = [...new Set(c.cities.map(city=>city.owner))];
+        let conqueror = (uniqueOwners.length===1 && uniqueOwners[0]!==playableId && state.countries[uniqueOwners[0]]) ? uniqueOwners[0] : null;
+        let displayColor = conqueror ? state.countries[conqueror].color : c.color;
+        path.setAttribute("fill", displayColor);
         path.setAttribute("fill-opacity","0.7");
         path.style.stroke = c.alliedWithPlayer ? "#3fb87f" : (c.eliminated ? "#555" : "#233752");
         path.style.strokeWidth = c.alliedWithPlayer ? "2" : "1";
         path.style.opacity = c.eliminated ? "0.35" : "1";
         path.style.cursor = "pointer";
         path.onclick = () => onCountryClick(playableId);
+        /* YENİ: Fog of War — istihbaratınız olmayan ülkeler haritada da
+           görsel olarak SOLUK bir katmanla kaplanır (askeri bilgiler
+           zaten panelde gizli — bkz. ui.updateAll() canSeeHSS). Bilgisi
+           OLAN ülkelerin rengi ise normalden daha CANLI görünür — ikisi
+           arasındaki kontrast artırıldı (bkz. style.css .fog-unseen/
+           .fog-seen). Casus/Uydu gönderildiğinde ya da Siber Ağ
+           teknolojisiyle bu katman kalkar; kendi ülkeniz ve
+           müttefikleriniz bu kısıtlamaya tabi değildir. İSTİHBARAT
+           MANTIĞI DEĞİŞMEDİ — sadece görünüm class'a taşındı. */
+        let isOwn = playableId===state.playerID;
+        let canSee = isOwn || c.alliedWithPlayer || (state.player && state.player.tech && state.player.tech.cyber) || c.scouted;
+        if(!canSee && !c.eliminated){
+          path.classList.add("fog-unseen");
+        } else if(!c.eliminated){
+          path.classList.add("fog-seen");
+        }
       } else {
         // Oynanamayan ülke: hangi kıta bloğuna aitse o blok rengiyle boyanır
         // ve o blok bir aktör olduğu için TIKLANABİLİR (oyuncu blok'a

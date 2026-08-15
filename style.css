@@ -16,6 +16,14 @@ body{background:radial-gradient(ellipse at top,#0b1420 0%,#050a10 70%);color:var
   #left-panel{order:1;}
   #map-wrapper{order:2;}
   #right-panel{order:3; padding-top:52px;} /* sağ üstteki sabit BM/sekme çubuğu başlığı kapatmasın diye */
+  /* YENİ: log/envanter kutuları uzun panelde flex:1 ile büyüyemiyordu
+     (panel kendi overflow:auto'suyla kaydığı için "kalan boşluk" hiç
+     oluşmuyordu) — artık masaüstünde SABİT bir minimum yükseklik ve
+     biraz daha büyük font garantili, okunabilirlik için. */
+  /* YENİ: log bölümü ~2cm yükseltildi (260px -> 336px) — daha fazla log
+     görünsün, kriz/savaş/siber operasyon satırları kaybolmasın. */
+  #log-box{min-height:336px;font-size:.8rem;}
+  #queue-box,#inventory-list,#research-queue-box{max-height:170px;font-size:.82rem;}
 }
 .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:8px;width:24%;min-width:300px;overflow-y:auto;box-shadow:inset 0 0 30px rgba(0,0,0,.5);
   /* KRİTİK: panel yüksekliği viewport'a göre SABİTLENMELİ, yoksa içindeki
@@ -187,16 +195,290 @@ body.un-open::before{content:"";position:fixed;inset:0;background:rgba(0,0,0,.6)
 #turn-report-panel.open{display:flex;}
 #turn-report-panel h2{color:var(--gold);}
 
+/* ================= YENİ BİLEŞENLER (4. tur: zorluk/tutorial/ekonomi/kabine/istatistik) ================= */
+
+/* Tutorial paneli — diğer modallarla aynı mimari, farklı vurgu rengi.
+   Not: oyun başlamadan da (#country-select-screen üstünde) açılabilmeli,
+   bu yüzden z-index diğer modallerden de yüksek tutuldu. */
+#tutorial-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:520px; max-height:80vh;
+  z-index:1200; display:none;
+}
+#tutorial-panel.open{display:flex;}
+#tutorial-panel h2{color:#a3e635;}
+
+/* Fabrikalar — inşa edilecek her bina için satır (isim + sayı + inşa butonu) */
+#factory-list-box{display:flex;flex-direction:column;gap:6px;}
+.factory-row{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#0a121e;padding:8px;border-radius:4px;border:1px solid var(--line);font-size:.75rem;}
+.factory-row .factory-info b{color:#fff;}
+.factory-row button{flex-shrink:0;padding:7px 10px;font-size:.68rem;}
+
+/* Kabine paneli — 4 bakanlık sekmesi + rapor gövdesi */
+#cabinet-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:540px; max-height:80vh;
+  z-index:600; display:none;
+}
+#cabinet-panel.open{display:flex;}
+#cabinet-tabs button{flex:1;min-width:100px;font-size:.68rem;padding:8px 4px;}
+#cabinet-body{min-height:120px;}
+#cabinet-body .ministry-suggestion{border-left:3px solid var(--gold);padding:6px 8px;margin-top:6px;background:#1a1508;border-radius:4px;}
+
+/* İstatistikler paneli — canvas tabanlı basit çizgi grafik */
+#stats-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:560px; max-height:80vh;
+  z-index:600; display:none;
+}
+#stats-panel.open{display:flex;}
+#stats-chart{background:#020617;border-radius:4px;border:1px solid var(--line);width:100%;height:auto;}
+#stats-legend{display:flex;flex-wrap:wrap;gap:10px;}
+
+/* YENİ: Gerçek bayrak görselleri (FLAG_IMAGES, Wikimedia SVG) — ülke
+   kartında büyük, hedef başlığı/HQ başlığında küçük boyut. object-fit
+   ile SVG'nin oranı bozulmadan kutuya sığar; <img> yüklenemezse (nadir
+   ağ sorunu) tarayıcı otomatik olarak alt text'e (emoji) düşmez, bu
+   yüzden game.js tarafında onerror ile emoji yedeği ayrıca bağlanıyor. */
+.flag-icon{display:inline-block;object-fit:cover;border-radius:2px;box-shadow:0 0 0 1px rgba(255,255,255,.15);vertical-align:middle;}
+.flag-icon-lg{width:64px;height:43px;}
+.flag-icon-sm{width:22px;height:15px;margin-right:4px;}
+.flag-icon-xs{width:16px;height:11px;margin-right:3px;}
+
+/* ================= YENİ BİLEŞENLER (7. tur: AI Merkezi genişletildi — 
+   izin ekranı, ayrı Sohbet/Komut/Ülkeyle Konuş panelleri) =================
+   Diğer modallerle (#cabinet-panel, #stats-panel) AYNI mimari: HTML'de
+   class="panel" ile temel görünümü (arkaplan/border/padding) alır, burada
+   sadece konum/boyut/z-index override edilir. */
+
+/* AI İzni onay ekranı — HERHANGİ bir AI özelliğinden önce görülmesi
+   gerektiği için z-index en yükseklerden (tutorial'dan bile üstte). */
+#ai-consent-modal{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:480px; max-height:70vh;
+  z-index:1300; display:none;
+}
+#ai-consent-modal.open{display:flex;}
+#ai-consent-modal h2{color:#facc15;}
+
+/* AI Merkezi — sadece Ayarlar + Danışmanlar */
+#ai-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:600px; max-height:85vh;
+  z-index:900; display:none;
+}
+#ai-panel.open{display:flex;}
+#ai-panel h2{color:#facc15;}
+#ai-tabs button{flex:1;min-width:110px;font-size:.68rem;padding:8px 4px;}
+
+/* Ayarlar sekmesi — sağlayıcı/model/anahtar formu + izin durumu */
+#ai-tab-body input[type="password"],
+#ai-tab-body input[type="text"],
+#ai-tab-body textarea{width:100%;margin-bottom:6px;}
+#ai-settings-status{border-left:3px solid var(--gold);padding:6px 8px;background:#1a1508;border-radius:4px;margin-top:6px;}
+#ai-consent-status{border-left:3px solid var(--accent);padding:6px 8px;background:#0a1a1e;border-radius:4px;margin:6px 0;font-size:.75rem;}
+#ai-consent-status.denied{border-left-color:var(--danger);background:#1a0a0a;}
+
+/* Danışmanlar sekmesi (ve Kabine'deki "AI'dan Rapor İste" butonunun
+   sonucu) — öneri kutusu + İncele/Uygula. Kabine/Danışman/Sohbet/Komut/
+   Ülkeyle Konuş'un HEPSİ bu kutuyu paylaşır (aynı sistemi ikinci kez
+   yazmamak için). */
+.ai-suggestion-box{margin-top:8px;padding:8px;background:#0a121e;border-radius:4px;border:1px solid var(--line);font-size:.78rem;}
+.ai-suggestion-box .ai-action-buttons{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+
+/* --- ORTAK SOHBET GÖRÜNÜMÜ (💬 AI Sohbet + 🌍 Ülkeyle Konuş bunu paylaşır) --- */
+.chat-log-box{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:8px;padding-right:2px;}
+.chat-log-box::-webkit-scrollbar{width:6px;} .chat-log-box::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+.chat-log-box .empty-hint{color:var(--muted);font-style:italic;font-size:.78rem;text-align:center;padding:24px 0;}
+.chat-msg{padding:8px 12px;border-radius:12px;max-width:85%;font-size:.78rem;white-space:pre-wrap;line-height:1.4;}
+.chat-msg-mine{align-self:flex-end;background:#0d6e63;color:#fff;border-bottom-right-radius:3px;}
+.chat-msg-theirs{align-self:flex-start;background:#0a121e;border:1px solid var(--line);border-bottom-left-radius:3px;}
+.chat-msg-theirs .chat-sender{display:block;font-size:.65rem;color:var(--accent);font-weight:700;margin-bottom:2px;}
+.chat-msg-pending{opacity:.6;font-style:italic;}
+.chat-input-row{display:flex;gap:6px;}
+.chat-input-row input{flex:1;}
+
+/* Öneri çipleri (Pax Historia'daki "Oyun özeti / Stratejik tavsiye /
+   Tehdit değerlendirmesi" hazır soru butonları) */
+.chip-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:2px;}
+.chip-row::-webkit-scrollbar{height:4px;} .chip-row::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px;}
+.chip{background:#2a1f45;border:1px solid #4c3a7a;color:#c9b8f5;padding:6px 12px;border-radius:20px;font-size:.68rem;white-space:nowrap;flex-shrink:0;cursor:pointer;font-weight:600;}
+.chip:hover{background:#3a2a5f;filter:none;transform:none;}
+
+/* 💬 AI Sohbet paneli (genel, serbest — hiçbir role/ülkeye bağlı değil) */
+#ai-chat-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:560px; max-height:85vh;
+  z-index:870; display:none;
+}
+#ai-chat-panel.open{display:flex;}
+#ai-chat-panel h2{color:#38bdf8;}
+
+/* 📝 Komut paneli — doğal dilde oyun motoru emri, sohbetten tamamen ayrı */
+#ai-command-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:520px; max-height:80vh;
+  z-index:870; display:none;
+}
+#ai-command-panel.open{display:flex;}
+#ai-command-panel h2{color:#a855f7;}
+#ai-command-body textarea{width:100%;margin:6px 0;}
+#ai-command-body .command-result{margin-top:8px;font-size:.78rem;}
+
+/* 🌍 Ülkeyle Konuş paneli — liste / seçim / sohbet, hepsi aynı gövdede
+   (game.js dinamik olarak değiştirir). */
+#country-chat-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:580px; max-height:85vh;
+  z-index:870; display:none;
+}
+#country-chat-panel.open{display:flex;}
+#country-chat-panel h2{color:#22c55e;}
+
+/* Liste görünümü — geçmiş konuşmalar (Pax Historia'daki "Diplomatik Sohbetler") */
+.chat-date-sep{text-align:center;font-size:.65rem;color:var(--muted);margin:8px 0 4px;text-transform:uppercase;letter-spacing:1px;}
+.chat-list-item{display:flex;align-items:center;gap:10px;background:#0a121e;border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer;margin-bottom:8px;}
+.chat-list-item:hover{border-color:var(--accent);}
+.chat-list-item.chat-new-item{background:linear-gradient(135deg,#1a2438,#0d6e63);border:1px solid var(--accent);}
+.chat-list-item .chat-flags{display:flex;flex-shrink:0;}
+.chat-list-item .chat-flags img,.chat-list-item .chat-flags span.flag-fallback{width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid var(--panel2);margin-left:-10px;background:#111;display:flex;align-items:center;justify-content:center;font-size:.8rem;}
+.chat-list-item .chat-flags img:first-child,.chat-list-item .chat-flags span.flag-fallback:first-child{margin-left:0;}
+.chat-list-item .chat-info{flex:1;min-width:0;}
+.chat-list-item .chat-info .chat-title{font-weight:700;color:#fff;font-size:.82rem;}
+.chat-list-item .chat-info .chat-preview{font-size:.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.chat-list-item .chat-time{font-size:.63rem;color:var(--muted);flex-shrink:0;align-self:flex-start;}
+
+/* Seçim görünümü — 22 ülkenin tamamından çoklu/tekli seçim ızgarası */
+#country-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;max-height:360px;overflow-y:auto;padding:4px 2px;margin-bottom:8px;}
+#country-picker-grid::-webkit-scrollbar{width:6px;} #country-picker-grid::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+.country-pick-item{display:flex;align-items:center;gap:6px;background:#0a121e;border:1px solid var(--line);border-radius:6px;padding:8px;cursor:pointer;font-size:.7rem;}
+.country-pick-item:hover{border-color:var(--accent);}
+.country-pick-item.selected{border-color:var(--good);background:#0f2e22;}
+.country-pick-item .flag-icon{flex-shrink:0;}
+.country-pick-item span.pick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#country-picker-actions{display:flex;gap:6px;}
+#country-picker-actions button{flex:1;}
+
+/* Sohbet başlığı içindeki geri/ayarlar/kapat mini-butonları (Pax
+   Historia'daki "← Azerbaijan ile sohbet et ⚙ ✕" satırı) */
+.chat-header-row{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.chat-header-row .chat-header-title{flex:1;font-size:.85rem;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chat-header-row button{padding:5px 9px;font-size:.7rem;background:#374151;flex-shrink:0;}
+
+/* ================= Haritanın SOL ALTINDAKİ 3 AI kısayol butonu =================
+   #map-zoom-controls (sağ alt) ile simetrik, ama sol altta ve 3 ayrı
+   sisteme (Sohbet/Komut/Ülkeyle Konuş) açılan dairesel butonlar. */
+#map-ai-buttons{position:absolute;bottom:10px;left:10px;display:flex;flex-direction:column;gap:8px;z-index:15;}
+#map-ai-buttons button{width:42px;height:42px;padding:0;background:rgba(13,20,32,.9);border:1px solid var(--line);font-size:1.15rem;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.4);}
+#map-ai-buttons button:hover{border-color:var(--accent);filter:none;transform:scale(1.08);}
+
+
+/* ================= YENİ BİLEŞENLER (5. tur: faaliyetler/kriz pop-up) ================= */
+
+/* YENİ: Kriz Uyarı Penceresi — diğer modallerden farklı, kırmızı/turuncu
+   vurgulu ve daha yüksek z-index'te (aynı anda Tur Raporu da açılsa kriz
+   önce görünsün diye). advancedSystem.checkEvents() tetiklediğinde
+   log satırına EK olarak otomatik açılır. */
+#crisis-popup{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:480px; max-height:70vh;
+  z-index:800; display:none;
+  border-color:#7a1f1f; box-shadow:0 0 40px rgba(194,59,59,.4);
+}
+#crisis-popup.open{display:flex;}
+#crisis-popup h2{color:#ff6b6b;}
+
+/* Faaliyetler (eski Siber Operasyonlar) — dropdown zaten genel select
+   stilini kullanıyor, ek bir şey gerekmiyor. */
+
+/* ================= YENİ BİLEŞENLER (8. tur: Ses/Müzik + Görsel Geri Bildirim) =================
+   #ai-panel ile AYNI mimari: class="panel" temel görünümü verir, burada
+   sadece konum/boyut/z-index override edilir. */
+#audio-settings-panel{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:92%; max-width:440px; max-height:70vh;
+  z-index:1250; display:none; /* İzin modalından (1300) hemen altta —
+     ikisi de tutorial'dan (1200) yukarıda, bilerek: ses/AI ayarları her
+     zaman erişilebilir kalmalı. */
+}
+#audio-settings-panel.open{display:flex;}
+#audio-settings-panel h2{color:#2fb8c6;}
+
+/* ================= YENİ: FOG OF WAR — SOLUK/CANLI KONTRASTI =================
+   Eskiden inline style.filter ile tek bir "karart" değeri uygulanıyordu.
+   Artık iki ayrı CSS sınıfı var — istihbaratı OLMAYAN ülkeler ÇOK daha
+   soluk/açık (karanlık değil, "solgun" görünsün), istihbaratı OLAN
+   ülkelerin rengi ise normalden daha canlı/doygun görünsün. Mevcut
+   istihbarat/gizlilik MANTIĞI (kim görebilir, casus/uydu/siber teknoloji)
+   HİÇ değişmedi — sadece bu iki sınıfın hangi ülkeye uygulandığı
+   geo.js'te aynı koşulla belirleniyor, burada sadece GÖRÜNÜM tanımlı. */
+.fog-unseen{ filter: grayscale(92%) brightness(1.4) saturate(0.25); opacity:0.5 !important; }
+.fog-seen{ filter: saturate(1.45) brightness(1.06); }
+
+/* ================= YENİ: HARİTA GÖRSEL GERİ BİLDİRİM =================
+   Hedef vurgulama, radar taraması, diplomatik/siber etki pulsu — hepsi
+   HAFİF, haritayı kapatmayacak şekilde tasarlandı (strateji oyunu
+   okunabilirliği öncelikli). Konumlandırma (top/left) her zaman JS
+   tarafından ilgili şehrin/ülkenin ekran koordinatına göre ayarlanır;
+   burada sadece görünüm/animasyon tanımlı. */
+.target-highlight-ring{
+  position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px;
+  border:2px solid #ff3344; border-radius:50%; pointer-events:none; z-index:12;
+  animation: target-pulse 1s ease-out infinite;
+}
+@keyframes target-pulse{
+  0%{transform:scale(.6); opacity:1;}
+  70%{transform:scale(1.6); opacity:.15;}
+  100%{transform:scale(1.8); opacity:0;}
+}
+.radar-sweep-ring{
+  position:absolute; width:46px; height:46px; margin:-23px 0 0 -23px;
+  border-radius:50%; pointer-events:none; z-index:11;
+  border:1px solid rgba(47,184,198,.5);
+  background: conic-gradient(rgba(47,184,198,.35) 0deg, transparent 60deg, transparent 360deg);
+  animation: radar-spin 2.2s linear infinite;
+}
+@keyframes radar-spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+.cyber-pulse-ring{
+  position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
+  border:2px dashed #a855f7; border-radius:50%; pointer-events:none; z-index:12;
+  animation: cyber-pulse .6s ease-in-out infinite alternate;
+}
+@keyframes cyber-pulse{ from{opacity:.9; transform:rotate(0deg) scale(1);} to{opacity:.3; transform:rotate(25deg) scale(1.15);} }
+.diplomatic-pulse-ring{
+  position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
+  border:2px solid #3fb87f; border-radius:50%; pointer-events:none; z-index:12;
+  animation: diplo-pulse 1.2s ease-out 2;
+}
+@keyframes diplo-pulse{
+  0%{transform:scale(.5); opacity:1; box-shadow:0 0 0 0 rgba(63,184,127,.6);}
+  100%{transform:scale(2.2); opacity:0; box-shadow:0 0 0 14px rgba(63,184,127,0);}
+}
+
 /* ================= MOBİL (≤899px) ================= */
 @media (max-width: 899px){
   body{overflow-y:auto;}
   #game-container{flex-direction:column;height:auto;min-height:100vh;padding:6px;gap:6px;}
   #map-wrapper{width:100%;height:46vh;min-height:280px;order:1;flex:none;}
-  #mobile-tabs{position:static;order:2;width:100%;}
-  #mobile-tabs button{flex:1;padding:10px 4px;font-size:.75rem;}
+  #mobile-tabs{position:static;order:2;width:100%;flex-wrap:wrap;}
+  #mobile-tabs button{flex:1;min-width:70px;padding:10px 4px;font-size:.72rem;}
   .panel{width:100%;min-width:0;order:3;max-height:none;height:auto;display:none;}
   .panel.mobile-active{display:flex;}
   h2{font-size:1rem;}
   button{padding:12px;font-size:.85rem;}
-  #log-box{min-height:160px;max-height:220px;}
+  /* YENİ: mobilde de ~2cm artış */
+  #log-box{min-height:290px;max-height:350px;}
+  /* YENİ: mobilde harita daha kısa (46vh) — sol-alt AI butonları ile
+     sağ-alt zoom kontrolleri küçülüp üst üste binmesin diye biraz
+     küçültüldü ve panel kenarlarına daha yakın konumlandı. */
+  #map-ai-buttons{bottom:6px;left:6px;gap:6px;}
+  #map-ai-buttons button{width:36px;height:36px;font-size:1rem;}
+  #map-zoom-controls{bottom:6px;right:6px;}
+  #map-zoom-controls button{width:30px;height:30px;font-size:.8rem;}
+  /* YENİ: modal panelleri mobilde ekranın büyük kısmını kaplasın, dar
+     genişlikte sıkışmasın (özellikle ülke seçim ızgarası ve sohbet). */
+  #ai-consent-modal, #ai-panel, #ai-chat-panel, #ai-command-panel, #country-chat-panel, #audio-settings-panel{
+    width:96%; max-height:88vh;
+  }
+  #country-picker-grid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));}
 }
